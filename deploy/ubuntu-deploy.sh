@@ -225,6 +225,11 @@ if [[ "$ENABLE_HTTPS" == "1" ]]; then
     CERTBOT_DOMAINS+=(-d "www.$DOMAIN")
   fi
   certbot --nginx --non-interactive --agree-tos --redirect --email "$CERTBOT_EMAIL" "${CERTBOT_DOMAINS[@]}"
+  https_response="$(curl --fail --silent --show-error --max-time 15 --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/api/health" || true)"
+  if [[ "$https_response" != '{"ok":true}' ]]; then
+    nginx -T 2>&1 | tail -n 80 || true
+    die "HTTPS health check failed (received: $https_response). Check DNS, certificate, and Nginx port 443."
+  fi
 fi
 
 log "Deployment complete"
