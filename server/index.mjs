@@ -32,7 +32,7 @@ const verifyPassword = (password, user) => {
 }
 
 function clientAddress(request) {
-  return request.socket.remoteAddress || 'unknown'
+  return request.headers['x-real-ip'] || request.socket.remoteAddress || 'unknown'
 }
 
 function allowLogin(request) {
