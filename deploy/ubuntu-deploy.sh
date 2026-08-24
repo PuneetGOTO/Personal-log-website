@@ -176,7 +176,8 @@ if [[ "$SKIP_FIREWALL" != "1" ]]; then
 fi
 
 systemctl daemon-reload
-systemctl enable --now "$SERVICE_NAME"
+systemctl enable "$SERVICE_NAME"
+systemctl restart "$SERVICE_NAME"
 if ! curl --fail --silent --show-error --max-time 10 "http://127.0.0.1:$PORT/api/health" | grep -q '"ok":true'; then
   systemctl --no-pager --full status "$SERVICE_NAME" || true
   die "The Node API health check failed. Refusing to expose an old Vite preview or a broken service."
