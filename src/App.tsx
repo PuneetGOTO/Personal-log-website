@@ -50,7 +50,14 @@ const moodOptions = [
   { value: 'Hopeful', label: 'Hopeful', icon: '🌱' },
 ]
 
-const today = new Date().toISOString().slice(0, 10)
+function getLocalDate(date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const today = getLocalDate()
 
 type EditorValues = {
   title: string
@@ -384,7 +391,7 @@ function SiteHeader({ user, view, night, mobileNav, onToggleNight, onToggleNav, 
 }
 
 function Footer() {
-  return <footer className="site-footer"><span>© 2026 My Diary</span><span>留一點空白，讓日子慢慢發生。</span></footer>
+  return <footer className="site-footer"><span>© {new Date().getFullYear()} My Diary</span><span>留一點空白，讓日子慢慢發生。</span></footer>
 }
 
 function PageTitle({ eyebrow, title, description, action }: { eyebrow?: string; title: string; description?: string; action?: React.ReactNode }) {
@@ -396,10 +403,16 @@ function Button({ children, variant = 'outline', onClick, type = 'button', disab
 }
 
 function HomePage({ user, entries, ownEntries, onNavigate }: { user: User | null; entries: JournalEntry[]; ownEntries: JournalEntry[]; onNavigate: (view: View, id?: string | null) => void }) {
+  const [currentDate, setCurrentDate] = useState(getLocalDate)
+  useEffect(() => {
+    const refreshDate = () => setCurrentDate(getLocalDate())
+    const timer = window.setInterval(refreshDate, 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
   const cards = user && ownEntries.length ? ownEntries.filter((entry) => entry.status === 'published').slice(0, 3) : entries.slice(0, 3)
   return <PageContainer className="home-page">
     <section className="home-hero"><span className="hero-line">✦</span><h1>Welcome to My Diary</h1><p>｜在這一裏，你可以把每天美好的事件記錄下來｜</p></section>
-    <section className="today-snapshot"><span className="section-label">今天日期：</span><strong>{formatDate(today)}</strong><span className="today-mood">Today I’m feeling: <span className="mood-emoji">{moodOptions.find((item) => item.value === (user && ownEntries[0]?.mood) || 'Happy')?.icon ?? '🌞'}</span> {user && ownEntries[0] ? ownEntries[0].mood : 'Happy'}</span></section>
+    <section className="today-snapshot"><span className="section-label">今天日期：</span><strong>{formatDate(currentDate)}</strong><span className="today-mood">Today I’m feeling: <span className="mood-emoji">{moodOptions.find((item) => item.value === (user && ownEntries[0]?.mood) || 'Happy')?.icon ?? '🌞'}</span> {user && ownEntries[0] ? ownEntries[0].mood : 'Happy'}</span></section>
     <section className="recent-section"><div className="section-heading"><h2>最近日誌 <Star size={22} fill="var(--accent-yellow)" strokeWidth={1.5} aria-hidden="true" /></h2><Button variant="outline" onClick={() => onNavigate(user ? 'new' : 'login')}><Plus size={17} />寫一篇日誌</Button></div><JournalList entries={cards} onOpen={(id) => onNavigate('preview', id)} emptyTitle="還沒有公開日誌" emptyText="寫下今天的一小段，讓它成為未來的收藏。" /></section>
   </PageContainer>
 }
