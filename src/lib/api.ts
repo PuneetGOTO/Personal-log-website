@@ -9,7 +9,13 @@ async function request<T>(path: string, options: RequestInit = {}) {
 }
 
 export const api = {
-  bootstrap: () => request<Bootstrap>('/api/bootstrap'),
+  bootstrap: async () => {
+    const payload = await request<Partial<Bootstrap>>('/api/bootstrap')
+    if (!Array.isArray(payload.entries) || !Array.isArray(payload.users) || !Array.isArray(payload.reports)) {
+      throw new Error('服务器 API 尚未启动，请重启 Node 服务后再试')
+    }
+    return { user: payload.user ?? null, entries: payload.entries, users: payload.users, reports: payload.reports } satisfies Bootstrap
+  },
   login: (values: { email: string; password: string }) => request<{ user: User }>('/api/auth/login', { method: 'POST', body: JSON.stringify(values) }),
   register: (values: { email: string; password: string; displayName: string; username: string }) => request<{ user: User }>('/api/auth/register', { method: 'POST', body: JSON.stringify(values) }),
   logout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),

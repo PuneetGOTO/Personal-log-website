@@ -177,6 +177,10 @@ fi
 
 systemctl daemon-reload
 systemctl enable --now "$SERVICE_NAME"
+if ! curl --fail --silent --show-error --max-time 10 "http://127.0.0.1:$PORT/api/health" | grep -q '"ok":true'; then
+  systemctl --no-pager --full status "$SERVICE_NAME" || true
+  die "The Node API health check failed. Refusing to expose an old Vite preview or a broken service."
+fi
 systemctl reload nginx
 
 if [[ "$ENABLE_HTTPS" == "1" ]]; then
