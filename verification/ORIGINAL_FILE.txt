@@ -1,0 +1,3 @@
+MY DIARY FIXTURE
+branch=baseline
+status=private

@@ -1,0 +1,43 @@
+MY DIARY MVP VERIFICATION
+
+CHANGED_BRANCH=hand-drawn-mvp-no-browser-chrome
+CHANGED_FIELD=BrowserChrome removed from the application shell
+
+ARTIFACTS
+- MODIFIED_FILE: C:\Code\Web H2\verification\MODIFIED_FILE.txt
+- DIFF_FILE: C:\Code\Web H2\verification\DIFF_FILE.txt
+- VERIFICATION: C:\Code\Web H2\verification\VERIFICATION.txt
+- ROLLBACK: C:\Code\Web H2\verification\ROLLBACK.sh
+- ORIGINAL_FIXTURE: C:\Code\Web H2\verification\ORIGINAL_FILE.txt
+Original SHA256 before fixture rollback test: A1C5C0D67EBFE5394C04ED8B70828A822F581F5F8F824DE8666E5C5B086F33BA
+
+BASELINE
+Command: Get-Content .\verification\ORIGINAL_FILE.txt
+Input: ORIGINAL_FILE.txt
+Literal output/result:
+MY DIARY FIXTURE
+branch=baseline
+status=private
+Exit status: 0
+
+MODIFIED
+Command: Get-Content .\verification\MODIFIED_FILE.txt
+Input: MODIFIED_FILE.txt
+Literal output/result:
+MY DIARY FIXTURE
+branch=hand-drawn-mvp-no-browser-chrome
+status=public
+Exit status: 0
+
+ROLLBACK
+Command: sh .\verification\ROLLBACK.sh
+Input: ROLLBACK_TEST_FILE.txt
+Literal output/result: rollback-restored=branch=baseline
+Exit status: 0
+Restored behavior/status: ROLLBACK_TEST_FILE.txt matches ORIGINAL_FILE.txt after rollback; MODIFIED_FILE.txt remains changed.
+
+BUILD
+Command: .\node_modules\.bin\tsc.cmd -b --pretty false; .\node_modules\.bin\vite.cmd build
+Input: src/**/*.tsx, src/**/*.ts, src/index.css
+Literal output/result: ✓ 1580 modules transformed; dist generated; vite build succeeded
+Exit status: 0

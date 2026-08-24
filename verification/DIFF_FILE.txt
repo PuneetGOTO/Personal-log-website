@@ -1,0 +1,7 @@
+--- ORIGINAL_FILE.txt
++++ MODIFIED_FILE.txt
+@@
+-branch=baseline
+-status=private
++branch=hand-drawn-mvp-no-browser-chrome
++status=public

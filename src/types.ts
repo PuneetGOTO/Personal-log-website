@@ -1,0 +1,58 @@
+export type Visibility = 'private' | 'public' | 'unlisted'
+export type EntryStatus = 'draft' | 'published' | 'archived'
+export type UserRole = 'user' | 'admin'
+export type UserStatus = 'active' | 'banned'
+
+export type JournalEntry = {
+  id: string
+  authorId: string
+  authorName: string
+  title: string
+  content: string
+  excerpt: string
+  mood: string
+  entryDate: string
+  visibility: Visibility
+  status: EntryStatus
+  tags: string[]
+  publishedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type User = {
+  id: string
+  username: string
+  displayName: string
+  email: string
+  role: UserRole
+  bio: string
+  password?: string
+  status?: UserStatus
+  createdAt?: string
+  lastSeenAt?: string
+}
+
+export type Report = {
+  id: string
+  entryId: string
+  title: string
+  reason: string
+  status: 'open' | 'reviewing' | 'resolved'
+  createdAt: string
+}
+
+export type View =
+  | 'home'
+  | 'public'
+  | 'mine'
+  | 'new'
+  | 'edit'
+  | 'preview'
+  | 'drafts'
+  | 'settings'
+  | 'tags'
+  | 'about'
+  | 'admin'
+  | 'login'
+  | 'register'

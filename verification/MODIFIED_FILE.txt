@@ -1,0 +1,3 @@
+MY DIARY FIXTURE
+branch=hand-drawn-mvp-no-browser-chrome
+status=public
