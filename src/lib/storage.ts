@@ -66,7 +66,6 @@ const seedUsers: User[] = [
     email: 'demo@example.com',
     role: 'user',
     bio: '把日子写下来，也把自己留在日子里。',
-    password: 'demo1234',
     status: 'active',
     createdAt: now,
     lastSeenAt: now,
@@ -79,7 +78,6 @@ const seedUsers: User[] = [
     role: 'admin',
     roleSource: 'seeded',
     bio: '照看这间安静的公共空间。',
-    password: 'admin1234',
     status: 'active',
     createdAt: now,
     lastSeenAt: now,
@@ -119,7 +117,6 @@ export function loadUsers() {
     roleSource: item.id === 'admin-user' ? 'seeded' : item.roleSource === 'granted' ? 'granted' : undefined,
     status: item.status ?? 'active',
     createdAt: item.createdAt ?? now,
-    password: item.password ?? (item.role === 'admin' ? 'admin1234' : 'change-me-now'),
   }))
 }
 

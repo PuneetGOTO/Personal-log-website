@@ -1,0 +1,25 @@
+import type { JournalEntry, Report, User, UserRole, Visibility } from '../types'
+
+type Bootstrap = { user: User | null; users: User[]; entries: JournalEntry[]; reports: Report[] }
+async function request<T>(path: string, options: RequestInit = {}) {
+  const response = await fetch(path, { credentials: 'include', headers: { 'Content-Type': 'application/json', ...(options.headers ?? {}) }, ...options })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`)
+  return payload as T
+}
+
+export const api = {
+  bootstrap: () => request<Bootstrap>('/api/bootstrap'),
+  login: (values: { email: string; password: string }) => request<{ user: User }>('/api/auth/login', { method: 'POST', body: JSON.stringify(values) }),
+  register: (values: { email: string; password: string; displayName: string; username: string }) => request<{ user: User }>('/api/auth/register', { method: 'POST', body: JSON.stringify(values) }),
+  logout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
+  updateProfile: (values: { displayName: string; username: string; bio: string }) => request<{ user: User }>('/api/auth/me', { method: 'PATCH', body: JSON.stringify(values) }),
+  saveEntry: (entry: Partial<JournalEntry> & { id?: string; title: string; content: string; mood: string; entryDate: string; visibility: Visibility; status: string; tags: string[] }) => request<JournalEntry>(entry.id ? `/api/entries/${entry.id}` : '/api/entries', { method: entry.id ? 'PATCH' : 'POST', body: JSON.stringify(entry) }),
+  deleteEntry: (entryId: string) => request<{ ok: true }>(`/api/entries/${entryId}`, { method: 'DELETE' }),
+  report: (entryId: string, reason: string) => request<Report>('/api/reports', { method: 'POST', body: JSON.stringify({ entryId, reason }) }),
+  createUser: (values: { displayName: string; username: string; email: string; password: string; role: UserRole }) => request<User>('/api/admin/users', { method: 'POST', body: JSON.stringify(values) }),
+  updateUser: (userId: string, values: { status?: 'active' | 'banned'; role?: UserRole; password?: string }) => request<User>(`/api/admin/users/${userId}`, { method: 'PATCH', body: JSON.stringify(values) }),
+  deleteUser: (userId: string) => request<{ ok: true }>(`/api/admin/users/${userId}`, { method: 'DELETE' }),
+  moderateEntry: (entryId: string, action: 'hide' | 'restore' | 'delete') => request<{ ok: true }>(`/api/admin/entries/${entryId}`, { method: 'PATCH', body: JSON.stringify({ action }) }),
+  updateReport: (reportId: string, status: Report['status']) => request<Report>(`/api/admin/reports/${reportId}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+}

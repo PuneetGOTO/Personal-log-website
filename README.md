@@ -1,196 +1,199 @@
 # My Diary
 
-My Diary is a Vite + React personal journal website. The interface keeps a warm-white paper background, hand-drawn black borders, handwritten headings, irregular corners, and small yellow accents across public pages, settings, and the admin workspace.
+My Diary is a warm-white personal journal with hand-drawn black lines, handwritten headings, irregular corners, and small yellow accents. Public pages, settings, forms, and the administrator workspace use the same visual language.
 
-## Features
+## Production features
 
-- Public and private journal entries, drafts, tags, moods, and reports.
-- Admin dashboard with overview, user management, article moderation, and report handling.
-- Admin actions: create accounts, assign roles, ban/unban users, change passwords, delete accounts, view articles, hide/restore articles, and permanently delete articles.
-- Responsive layout for desktop and mobile.
+- Server-side accounts, sessions, entries, reports, and administrator actions.
+- HttpOnly SameSite session cookie; Secure is enabled automatically when NODE_ENV=production.
+- Passwords are salted with Node scrypt; the browser never receives password hashes or salts.
+- New registration always creates a normal user. An email containing admin never grants administrator access.
+- Administrators can create accounts, grant or revoke roles, ban or unban users, change passwords, delete accounts, view entries, hide or restore entries, delete entries, and resolve reports.
+- Login attempts are rate limited in memory (10 attempts per IP per 15 minutes).
 
-## Security note
+The production server is server/index.mjs. It serves the built Vite files and the /api routes from one process. Runtime data is written to data/app.json with restrictive file permissions; .env and data/ are ignored by Git.
 
-This repository is a frontend prototype. Users, entries, reports, and passwords are stored in browser `localStorage`; there is no server-side database, session system, password hashing, or API authorization. Do not use it as a production account system without replacing the storage/authentication layer with a backend, HTTPS-only cookies, server-side authorization, and Argon2id or bcrypt password hashing.
+This storage layer is intended for one production instance. It is not a horizontally scalable database. For multiple app instances, move users, entries, reports, and sessions to PostgreSQL (or another managed database) and Redis before scaling out.
 
-Seeded demo credentials:
+## First administrator account
 
-- `demo@example.com` / `demo1234`
-- `admin@example.com` / `admin1234`
+There is no fixed public administrator password. On the first start, the server creates admin@example.com and a random password. The Ubuntu deployment script writes that password to the private .env file and prints it once. Log in immediately and change it from the administrator user panel. If ADMIN_INITIAL_PASSWORD is supplied before the first start, that value is used instead.
 
-Change these immediately for any public demo. They are only convenience credentials for this prototype.
-
-New registrations always start with the `user` role. An email containing `admin` does not grant administrator access; administrator access can only come from the seeded admin account or an explicit role change in the admin workspace.
+Old browser localStorage demo data is not imported into the server database. This is intentional: client storage must never become an authority for accounts or roles.
 
 ## Local development
 
 Requirements: Node.js 20 or newer, Git, and pnpm 9 or newer.
 
-```bash
+~~~
 git clone https://github.com/PuneetGOTO/Personal-log-website.git
 cd Personal-log-website
 corepack enable
 corepack prepare pnpm@9 --activate
 pnpm install --frozen-lockfile
-pnpm dev
-```
-
-Open `http://127.0.0.1:5173/`. For a production-style local check:
-
-```bash
 pnpm build
-pnpm preview -- --host 127.0.0.1 --port 4173
-```
+pnpm start
+~~~
+
+Run pnpm start in one terminal, then run pnpm dev in a second terminal. Open http://127.0.0.1:5173/. Vite proxies /api to the local Node server.
+
+To exercise the production server directly:
+
+~~~
+pnpm build
+NODE_ENV=production PORT=4173 ADMIN_INITIAL_PASSWORD='replace-with-a-long-password' pnpm start
+~~~
+
+The API health endpoint is http://127.0.0.1:4173/api/health.
 
 ## Windows deployment
 
-### 1. Install prerequisites
+1. Install Git for Windows and Node.js 20 LTS. In PowerShell:
 
-Install Git for Windows and Node.js 20 LTS. Open PowerShell:
-
-```powershell
-git --version
-node --version
+~~~
 corepack enable
 corepack prepare pnpm@9 --activate
-```
-
-### 2. Download, build, and run
-
-```powershell
-git clone https://github.com/PuneetGOTO/Personal-log-website.git C:\\Apps\\my-diary
-Set-Location C:\\Apps\\my-diary
+git clone https://github.com/PuneetGOTO/Personal-log-website.git C:\Apps\my-diary
+Set-Location C:\Apps\my-diary
 pnpm install --frozen-lockfile
 pnpm build
-pnpm preview -- --host 127.0.0.1 --port 4173
-```
+~~~
 
-Keep the process running, or install it as a Windows service using NSSM. Keep the app on `127.0.0.1`; expose it through IIS or Caddy on ports 80 and 443.
+2. Create a private environment file. Use a long random password and do not commit this file:
 
-### 3. Windows Firewall
+~~~
+@"
+NODE_ENV=production
+PORT=4173
+ADMIN_INITIAL_PASSWORD=replace-with-a-long-random-password
+DEMO_INITIAL_PASSWORD=replace-with-a-long-random-password
+"@ | Set-Content -Encoding ascii .env
+~~~
 
-Run PowerShell as Administrator. Only open web ports when a reverse proxy is configured:
+3. Start the service. For a real server, install it with NSSM or run it under a Windows service account:
 
-```powershell
-New-NetFirewallRule -DisplayName "My Diary HTTP" -Direction Inbound -Protocol TCP -LocalPort 80 -Action Allow
-New-NetFirewallRule -DisplayName "My Diary HTTPS" -Direction Inbound -Protocol TCP -LocalPort 443 -Action Allow
-```
+~~~
+$env:NODE_ENV = 'production'
+$env:PORT = '4173'
+pnpm start
+~~~
 
-Do not expose port 4173 publicly unless this is a temporary test.
+Keep Node bound to 127.0.0.1. Put IIS or Caddy in front of it on ports 80/443. Example Caddyfile:
 
-### 4. Domain and public IP on Windows
-
-At your DNS provider create `A: diary.example.com -> YOUR_PUBLIC_IPV4`. Add an `AAAA` record only when the server, firewall, and router support IPv6. For a home network, forward TCP 80 and 443 on the router to the Windows machine's private IP. If the ISP uses CGNAT, inbound port forwarding will not work; use a VPS, a tunnel, or request a public IPv4 from the ISP.
-
-For HTTPS, install Caddy and create `C:\\Caddy\\Caddyfile`:
-
-```text
+~~~
 diary.example.com {
     reverse_proxy 127.0.0.1:4173
 }
-```
+~~~
 
-Caddy requests and renews certificates automatically after DNS and ports 80/443 are ready. IIS can use URL Rewrite + Application Request Routing with the same target: `http://127.0.0.1:4173`.
+Open only the reverse-proxy ports in Windows Firewall (PowerShell as Administrator):
 
-## Linux deployment
+~~~
+New-NetFirewallRule -DisplayName "My Diary HTTP" -Direction Inbound -Protocol TCP -LocalPort 80 -Action Allow
+New-NetFirewallRule -DisplayName "My Diary HTTPS" -Direction Inbound -Protocol TCP -LocalPort 443 -Action Allow
+~~~
 
-On Debian/Ubuntu, the manual flow is:
+Never expose port 4173 directly to the Internet.
 
-```bash
+## Linux and Ubuntu manual deployment
+
+~~~
 sudo apt update
-sudo apt install -y git curl nginx
+sudo apt install -y ca-certificates curl git nginx ufw
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs
 sudo npm install --global pnpm@9
-git clone https://github.com/PuneetGOTO/Personal-log-website.git /var/www/my-diary
+sudo git clone https://github.com/PuneetGOTO/Personal-log-website.git /var/www/my-diary
+sudo chown -R "$USER:$USER" /var/www/my-diary
 cd /var/www/my-diary
-sudo pnpm install --frozen-lockfile
-sudo pnpm build
-```
+pnpm install --frozen-lockfile
+pnpm build
+~~~
 
-Create a systemd service that runs `pnpm exec vite preview --host 127.0.0.1 --port 4173`, then reverse proxy it from Nginx. The Ubuntu script below automates these steps.
+Create /var/www/my-diary/.env with mode 600:
+
+~~~
+umask 077
+cat > .env <<'EOF'
+NODE_ENV=production
+PORT=4173
+ADMIN_INITIAL_PASSWORD=replace-with-a-long-random-password
+DEMO_INITIAL_PASSWORD=replace-with-a-long-random-password
+EOF
+~~~
+
+Run pnpm start through systemd as the application user, then reverse proxy 127.0.0.1:4173 from Nginx. Do not bind the Node service to 0.0.0.0.
 
 ## Ubuntu automated deployment
 
-[`deploy/ubuntu-deploy.sh`](./deploy/ubuntu-deploy.sh) installs Node.js, pnpm, Git, Nginx, and UFW; clones or updates the repository; builds the app; creates a `my-diary.service` systemd unit; writes the Nginx virtual host; and optionally runs Certbot.
+deploy/ubuntu-deploy.sh installs Node.js, pnpm, Git, Nginx, and UFW; clones or fast-forwards the repository; creates first-boot secrets; builds the app; creates a systemd unit; configures Nginx; and optionally obtains a Let's Encrypt certificate.
 
-### 1. Prepare DNS first
+### 1. DNS and public IP
 
-Create this record at your DNS provider:
+Create an A record before requesting HTTPS:
 
-```text
+~~~
 Type: A
 Name: diary
 Value: YOUR_PUBLIC_IPV4
 TTL: 300
-```
+~~~
 
-If you configure `www`, create `www.diary.example.com` as an `A` or `CNAME` record too. Verify propagation and the server's public IP:
+Check that DNS and the server agree:
 
-```bash
+~~~
 dig +short diary.example.com
 curl -4 https://ifconfig.me
-```
+~~~
 
-The values must point to the same public server. For a home server, forward TCP 80 and 443 from the router to Ubuntu. For a cloud VPS, allow 80/443 in the provider security group as well as UFW.
+For a home server, forward TCP 80 and 443 from the router to Ubuntu. For a VPS, allow 80/443 in the provider security group as well as UFW. Addresses in 192.168.0.0/16, 10.0.0.0/8, and 172.16.0.0/12 are private and cannot be public DNS targets. CGNAT prevents inbound connections unless the ISP provides a public address or you use a tunnel/VPS.
 
-### 2. Run the deployment script
+### 2. Run the script
 
-From a checkout of this repository:
+~~~
+sudo bash deploy/ubuntu-deploy.sh --domain diary.example.com --email admin@example.com --https
+~~~
 
-```bash
-sudo bash deploy/ubuntu-deploy.sh \
-  --domain diary.example.com \
-  --email admin@example.com \
-  --https
-```
+Include --www to configure www.diary.example.com too:
 
-To include `www.diary.example.com`:
-
-```bash
-sudo bash deploy/ubuntu-deploy.sh \
-  --domain diary.example.com \
-  --email admin@example.com \
-  --https \
-  --www
-```
+~~~
+sudo bash deploy/ubuntu-deploy.sh --domain diary.example.com --email admin@example.com --https --www
+~~~
 
 Useful options:
 
-```bash
+~~~
 sudo bash deploy/ubuntu-deploy.sh --help
 sudo bash deploy/ubuntu-deploy.sh --domain diary.example.com --app-dir /srv/my-diary --port 4173
 sudo bash deploy/ubuntu-deploy.sh --domain diary.example.com --skip-firewall
-```
+~~~
 
-The script creates `/etc/systemd/system/my-diary.service`, `/etc/nginx/sites-available/my-diary`, `/etc/nginx/sites-enabled/my-diary`, and `/var/www/my-diary` by default.
+On first deployment, the script creates .env with random secrets and prints the initial admin password once. Store it securely, log in, and change it. Do not put .env in GitHub or paste it into a public issue.
 
-### 3. Verify and operate the service
+### 3. Verify and update
 
-```bash
+~~~
 sudo systemctl status my-diary
-sudo systemctl restart my-diary
 sudo journalctl -u my-diary -f
 sudo nginx -t
-curl -I http://127.0.0.1:4173
+curl http://127.0.0.1:4173/api/health
 curl -I https://diary.example.com
-```
+~~~
 
-After a new GitHub commit, rerun the same deployment command. It performs a fast-forward pull, reinstalls the lockfile dependencies, rebuilds the bundle, and restarts the service.
+After a new commit, rerun the same deployment command. It fast-forwards the checkout, installs the lockfile dependencies, builds, and restarts the service. The service files are /etc/systemd/system/my-diary.service, /etc/nginx/sites-available/my-diary, and /etc/nginx/sites-enabled/my-diary.
 
-## Public IP and domain checklist
+## Security checklist
 
-1. Reserve or confirm a public IPv4/IPv6 address. `192.168.x.x`, `10.x.x.x`, and `172.16.x.x` are private addresses and cannot be used in public DNS.
-2. Point the domain's `A` record to the public IPv4. Add `AAAA` only when IPv6 is fully reachable.
-3. Forward TCP 80 and 443 at the router, or allow them in the cloud firewall/security group.
-4. Allow `Nginx Full` in UFW or the equivalent host firewall.
-5. Wait for DNS propagation, then run Certbot. Certificate issuance fails if DNS or port 80 is not reachable.
-6. Keep Vite preview on `127.0.0.1:4173`; Nginx or Caddy should be the only public listener.
+- Use HTTPS and keep port 4173 private.
+- Keep .env mode 600; use a unique long admin password.
+- Back up data/app.json securely, and test restoring it.
+- Restrict SSH to keys and a small allowlist; keep Ubuntu, Node.js, Nginx, and pnpm updated.
+- Do not run the Node service as root.
+- Before using multiple instances, migrate the JSON store and in-memory sessions to managed database/session services.
 
 ## Troubleshooting
 
-- `502 Bad Gateway`: check `sudo systemctl status my-diary` and `curl http://127.0.0.1:4173`.
-- Domain resolves to the wrong server: check `dig +short diary.example.com` and the provider's DNS records.
-- Certbot validation fails: check DNS, router forwarding, cloud security rules, UFW, and that Nginx listens on port 80.
-- Home server cannot be reached: check CGNAT, double NAT, ISP inbound-port blocking, and the router forwarding target.
-- Blank page after a deep link: make sure traffic reaches Vite preview and that the proxy preserves SPA fallback behavior.
+- 502 Bad Gateway: check systemctl status my-diary and curl http://127.0.0.1:4173/api/health.
+- Blocked request host error: add the public hostname to server.allowedHosts and preview.allowedHosts in vite.config.ts, then rebuild. The current deployment already includes diary.learnmath2.xyz.
+- Certbot validation fails: verify DNS, router forwarding, cloud security rules, UFW, and that Nginx listens on port 80.
+- A blank deep link: confirm Nginx proxies all paths to Node; the Node server falls back to dist/index.html for SPA routes.

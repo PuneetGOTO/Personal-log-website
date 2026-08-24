@@ -40,7 +40,8 @@ import {
   X,
 } from 'lucide-react'
 import type { JournalEntry, Report, User, View, Visibility } from './types'
-import { loadEntries, loadReports, loadUser, loadUsers, makeExcerpt, saveEntries, saveReports, saveUser, saveUsers } from './lib/storage'
+import { makeExcerpt } from './lib/storage'
+import { api } from './lib/api'
 
 const moodOptions = [
   { value: 'Happy', label: 'Happy', icon: '🌞' },
@@ -123,15 +124,11 @@ function formatLongDate(value: string) {
 }
 
 function App() {
-  const [entries, setEntries] = useState(loadEntries)
-  const [reports, setReports] = useState(loadReports)
-  const [users, setUsers] = useState<User[]>(loadUsers)
-  const [user, setUser] = useState<User | null>(() => {
-    const current = loadUser()
-    if (!current) return null
-    if (current.role === 'admin' && current.id !== 'admin-user' && current.roleSource !== 'granted') return { ...current, role: 'user', roleSource: undefined }
-    return current
-  })
+  const [entries, setEntries] = useState<JournalEntry[]>([])
+  const [reports, setReports] = useState<Report[]>([])
+  const [users, setUsers] = useState<User[]>([])
+  const [user, setUser] = useState<User | null>(null)
+  const [ready, setReady] = useState(false)
   const [view, setView] = useState<View>(initialView)
   const [selectedId, setSelectedId] = useState<string | null>(initialSelection)
   const [adminPreview, setAdminPreview] = useState(false)
@@ -141,25 +138,13 @@ function App() {
   const [reportingId, setReportingId] = useState<string | null>(null)
 
   useEffect(() => {
-    saveEntries(entries)
-  }, [entries])
-
-  useEffect(() => {
-    saveReports(reports)
-  }, [reports])
-
-  useEffect(() => {
-    saveUser(user)
-  }, [user])
-
-  useEffect(() => {
-    saveUsers(users)
-  }, [users])
-
-  useEffect(() => {
-    if (!user || users.some((item) => item.id === user.id)) return
-    setUsers((current) => [user, ...current])
-  }, [user, users])
+    api.bootstrap().then((snapshot) => {
+      setEntries(snapshot.entries)
+      setReports(snapshot.reports)
+      setUsers(snapshot.users)
+      setUser(snapshot.user)
+    }).catch(() => notify('无法连接服务器，请稍后重试。', 'error')).finally(() => setReady(true))
+  }, [])
 
   useEffect(() => {
     localStorage.setItem('my-diary.night', String(night))
@@ -203,38 +188,20 @@ function App() {
   const ownEntries = user ? entries.filter((entry) => entry.authorId === user.id && entry.status !== 'archived') : []
   const allTags = Array.from(new Set(entries.flatMap((entry) => entry.tags))).sort()
 
-  const handleAuth = (mode: 'login' | 'register', values: { email: string; password: string; displayName: string; username: string }) => {
-    const normalizedEmail = values.email.trim().toLowerCase()
-    const existingUser = users.find((item) => item.email.toLowerCase() === normalizedEmail)
-    if (mode === 'register' && existingUser) {
-      notify('这个邮箱已经注册，请直接登录。', 'error')
-      return
+  const handleAuth = async (mode: 'login' | 'register', values: { email: string; password: string; displayName: string; username: string }) => {
+    try {
+      const result = mode === 'login' ? await api.login(values) : await api.register(values)
+      setUser(result.user)
+      const snapshot = await api.bootstrap()
+      setEntries(snapshot.entries); setReports(snapshot.reports); setUsers(snapshot.users)
+      notify(mode === 'login' ? '歡迎回來，今天也寫一點吧。' : '帳號建立完成，歡迎來到你的日誌。')
+      navigate('home')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '登录失败，请稍后重试。', 'error')
     }
-    if (mode === 'login' && existingUser?.status === 'banned') {
-      notify('这个账号目前已被暂停，请联系管理员。', 'error')
-      return
-    }
-    if (mode === 'login' && existingUser && existingUser.password !== values.password) {
-      notify('邮箱或密码不正确。', 'error')
-      return
-    }
-    const nextUser: User = existingUser ?? {
-      id: `user-${Date.now()}`,
-      username: values.username || normalizedEmail.split('@')[0],
-      displayName: values.displayName || normalizedEmail.split('@')[0],
-      email: values.email,
-      role: 'user',
-      roleSource: undefined,
-      bio: '把日子寫下來，也把自己留在日子裡。',
-    }
-    const activeUser: User = { ...nextUser, email: normalizedEmail, password: nextUser.password ?? values.password, status: 'active', createdAt: nextUser.createdAt ?? new Date().toISOString(), lastSeenAt: new Date().toISOString() }
-    setUser(activeUser)
-    setUsers((current) => existingUser ? current.map((item) => item.id === existingUser.id ? activeUser : item) : [activeUser, ...current])
-    notify(mode === 'login' ? '歡迎回來，今天也寫一點吧。' : '帳號建立完成，歡迎來到你的日誌。')
-    navigate('home')
   }
 
-  const saveEntry = (values: EditorValues, shouldPublish: boolean, existing?: JournalEntry | null) => {
+  const saveEntry = async (values: EditorValues, shouldPublish: boolean, existing?: JournalEntry | null) => {
     if (!user) {
       navigate('login')
       return
@@ -256,100 +223,101 @@ function App() {
       createdAt: existing?.createdAt ?? stamp,
       updatedAt: stamp,
     }
-    setEntries((current) => [entry, ...current.filter((item) => item.id !== entry.id)])
-    notify(shouldPublish ? '日誌已發布。' : '草稿已儲存。')
-    navigate(shouldPublish ? (entry.visibility === 'public' ? 'preview' : 'mine') : 'drafts', entry.id)
+    try {
+      const saved = await api.saveEntry(entry)
+      setEntries((current) => [saved, ...current.filter((item) => item.id !== saved.id)])
+      notify(shouldPublish ? '日誌已發布。' : '草稿已儲存。')
+      navigate(shouldPublish ? (saved.visibility === 'public' ? 'preview' : 'mine') : 'drafts', saved.id)
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '保存失败，请稍后重试。', 'error')
+    }
   }
 
-  const archiveEntry = (entry: JournalEntry) => {
-    setEntries((current) => current.map((item) => item.id === entry.id ? { ...item, status: 'archived', updatedAt: new Date().toISOString() } : item))
-    notify('日誌已封存。', 'info')
+  const archiveEntry = async (entry: JournalEntry) => {
+    try {
+      const archived = await api.saveEntry({ ...entry, status: 'archived' })
+      setEntries((current) => current.map((item) => item.id === archived.id ? archived : item))
+      notify('日誌已封存。', 'info')
+    } catch (error) { notify(error instanceof Error ? error.message : '操作失败。', 'error') }
   }
 
-  const submitReport = (entry: JournalEntry, reason: string) => {
-    const report: Report = { id: `report-${Date.now()}`, entryId: entry.id, title: entry.title, reason, status: 'open', createdAt: new Date().toISOString() }
-    setReports((current) => [report, ...current])
-    setReportingId(null)
-    notify('謝謝你的回報，我們會查看這篇內容。', 'info')
+  const submitReport = async (entry: JournalEntry, reason: string) => {
+    try {
+      const report = await api.report(entry.id, reason)
+      setReports((current) => [report, ...current])
+      setReportingId(null)
+      notify('謝謝你的回報，我們會查看這篇內容。', 'info')
+    } catch (error) { notify(error instanceof Error ? error.message : '提交失败。', 'error') }
   }
 
-  const updateReport = (report: Report, status: Report['status']) => {
-    setReports((current) => current.map((item) => item.id === report.id ? { ...item, status } : item))
-    notify('檢舉狀態已更新。')
+  const updateReport = async (report: Report, status: Report['status']) => {
+    try {
+      const updated = await api.updateReport(report.id, status)
+      setReports((current) => current.map((item) => item.id === updated.id ? updated : item))
+      notify('檢舉狀態已更新。')
+    } catch (error) { notify(error instanceof Error ? error.message : '更新失败。', 'error') }
   }
 
-  const createManagedUser = (values: { displayName: string; username: string; email: string; password: string; role: User['role'] }) => {
+  const createManagedUser = async (values: { displayName: string; username: string; email: string; password: string; role: User['role'] }) => {
     const email = values.email.trim().toLowerCase()
     if (!email || !values.displayName.trim() || values.password.length < 8 || users.some((item) => item.email.toLowerCase() === email)) {
       notify('请填写完整资料，且邮箱不能重复。', 'error')
       return false
     }
-    const stamp = new Date().toISOString()
-    const next: User = { id: `user-${Date.now()}`, username: values.username.trim() || email.split('@')[0], displayName: values.displayName.trim(), email, password: values.password, role: values.role, roleSource: values.role === 'admin' ? 'granted' : undefined, bio: '', status: 'active', createdAt: stamp }
-    setUsers((current) => [next, ...current])
-    notify('新账号已建立。')
-    return true
+    try {
+      const created = await api.createUser({ ...values, email })
+      setUsers((current) => [created, ...current]); notify('新账号已建立。'); return true
+    } catch (error) { notify(error instanceof Error ? error.message : '创建失败。', 'error'); return false }
   }
 
-  const setUserStatus = (target: User, status: 'active' | 'banned') => {
+  const setUserStatus = async (target: User, status: 'active' | 'banned') => {
     if (target.id === user?.id && status === 'banned') {
       notify('不能暂停当前管理员账号。', 'error')
       return
     }
-    setUsers((current) => current.map((item) => item.id === target.id ? { ...item, status } : item))
-    if (user?.id === target.id) setUser((current) => current ? { ...current, status } : current)
-    notify(status === 'banned' ? '账号已暂停。' : '账号已恢复。', 'info')
+    try { const updated = await api.updateUser(target.id, { status }); setUsers((current) => current.map((item) => item.id === updated.id ? updated : item)); if (user?.id === target.id) setUser(updated); notify(status === 'banned' ? '账号已暂停。' : '账号已恢复。', 'info') } catch (error) { notify(error instanceof Error ? error.message : '操作失败。', 'error') }
   }
 
-  const setUserRole = (target: User, role: User['role']) => {
+  const setUserRole = async (target: User, role: User['role']) => {
     if (target.id === user?.id) {
       notify('不能修改当前管理员的角色。', 'error')
       return
     }
-    setUsers((current) => current.map((item) => item.id === target.id ? { ...item, role, roleSource: role === 'admin' ? 'granted' : undefined } : item))
-    notify(role === 'admin' ? '账号已升级为管理员。' : '管理员权限已收回。', 'info')
+    try { const updated = await api.updateUser(target.id, { role }); setUsers((current) => current.map((item) => item.id === updated.id ? updated : item)); notify(role === 'admin' ? '账号已升级为管理员。' : '管理员权限已收回。', 'info') } catch (error) { notify(error instanceof Error ? error.message : '操作失败。', 'error') }
   }
 
-  const updateManagedPassword = (target: User, password: string) => {
+  const updateManagedPassword = async (target: User, password: string) => {
     if (password.length < 8) {
       notify('密码至少需要 8 位。', 'error')
       return false
     }
-    setUsers((current) => current.map((item) => item.id === target.id ? { ...item, password } : item))
-    if (user?.id === target.id) setUser((current) => current ? { ...current, password } : current)
-    notify('密码已更新。')
-    return true
+    try { const updated = await api.updateUser(target.id, { password }); setUsers((current) => current.map((item) => item.id === updated.id ? updated : item)); if (user?.id === target.id) setUser(updated); notify('密码已更新。'); return true } catch (error) { notify(error instanceof Error ? error.message : '更新失败。', 'error'); return false }
   }
 
-  const deleteManagedUser = (target: User) => {
+  const deleteManagedUser = async (target: User) => {
     if (target.id === user?.id) {
       notify('不能删除当前管理员账号。', 'error')
       return
     }
     if (!window.confirm(`确定删除「${target.displayName}」？其文章也会一并删除。`)) return
-    setUsers((current) => current.filter((item) => item.id !== target.id))
-    setEntries((current) => current.filter((entry) => entry.authorId !== target.id))
-    setReports((current) => current.filter((report) => entries.some((entry) => entry.id === report.entryId && entry.authorId !== target.id)))
-    notify('账号及其内容已删除。', 'info')
+    try { await api.deleteUser(target.id); setUsers((current) => current.filter((item) => item.id !== target.id)); setEntries((current) => current.filter((entry) => entry.authorId !== target.id)); notify('账号及其内容已删除。', 'info') } catch (error) { notify(error instanceof Error ? error.message : '删除失败。', 'error') }
   }
 
-  const moderateEntry = (entry: JournalEntry, action: 'hide' | 'restore' | 'delete') => {
+  const moderateEntry = async (entry: JournalEntry, action: 'hide' | 'restore' | 'delete') => {
     if (action === 'delete') {
       if (!window.confirm(`确定删除「${entry.title}」？`)) return
-      setEntries((current) => current.filter((item) => item.id !== entry.id))
-      setReports((current) => current.filter((report) => report.entryId !== entry.id))
-      notify('文章已永久删除。', 'info')
+      try { await api.moderateEntry(entry.id, action); setEntries((current) => current.filter((item) => item.id !== entry.id)); setReports((current) => current.filter((report) => report.entryId !== entry.id)); notify('文章已永久删除。', 'info') } catch (error) { notify(error instanceof Error ? error.message : '删除失败。', 'error') }
       return
     }
-    setEntries((current) => current.map((item) => item.id === entry.id ? { ...item, status: action === 'hide' ? 'archived' : 'published', visibility: action === 'hide' ? item.visibility : 'public', updatedAt: new Date().toISOString() } : item))
-    notify(action === 'hide' ? '文章已隐藏。' : '文章已恢复公开。', 'info')
+    try { await api.moderateEntry(entry.id, action); setEntries((current) => current.map((item) => item.id === entry.id ? { ...item, status: action === 'hide' ? 'archived' : 'published', visibility: action === 'hide' ? item.visibility : 'public', updatedAt: new Date().toISOString() } : item)); notify(action === 'hide' ? '文章已隐藏。' : '文章已恢复公开。', 'info') } catch (error) { notify(error instanceof Error ? error.message : '操作失败。', 'error') }
   }
 
   return (
     <div className={`app-root ${night ? 'theme-night' : ''}`}>
       <BrowserFrame>
-        <SiteHeader user={user} view={view} night={night} mobileNav={mobileNav} onToggleNight={() => setNight((value) => !value)} onToggleNav={() => setMobileNav((value) => !value)} onNavigate={navigate} onLogout={() => { setUser(null); notify('已登出。', 'info'); navigate('home') }} />
+        <SiteHeader user={user} view={view} night={night} mobileNav={mobileNav} onToggleNight={() => setNight((value) => !value)} onToggleNav={() => setMobileNav((value) => !value)} onNavigate={navigate} onLogout={async () => { await api.logout().catch(() => undefined); setUser(null); setEntries([]); setReports([]); setUsers([]); notify('已登出。', 'info'); navigate('home') }} />
         <main className="page-shell">
+          {!ready ? <div className="permission-state"><BookOpen size={28} /><h2>正在连接服务器</h2><p>正在读取日誌与权限，请稍候。</p></div> : <>
           {view === 'home' && <HomePage user={user} entries={publicEntries} ownEntries={ownEntries} onNavigate={navigate} />}
           {view === 'public' && <PublicPage entries={publicEntries} allTags={allTags} onOpen={(id) => navigate('preview', id)} />}
           {view === 'mine' && <MinePage entries={ownEntries} onNew={() => navigate('new')} onEdit={(id) => navigate('edit', id)} onArchive={archiveEntry} onPreview={(id) => navigate('preview', id)} />}
@@ -358,10 +326,11 @@ function App() {
           {view === 'edit' && <EditorPage key={selectedId ?? 'edit'} entry={selectedEntry} onSave={(values, publish) => saveEntry(values, publish, selectedEntry)} onPreview={(values) => saveEntry(values, false, selectedEntry)} onBack={() => navigate('mine')} />}
           {view === 'preview' && <PreviewPage entry={selectedEntry} user={user} authorBanned={Boolean(selectedEntry && users.some((item) => item.id === selectedEntry.authorId && item.status === 'banned'))} onBack={() => adminPreview ? navigate('admin') : navigate(user && selectedEntry?.authorId === user.id ? 'mine' : 'public')} onEdit={(id) => navigate('edit', id)} onReport={(id) => setReportingId(id)} />}
           {(view === 'login' || view === 'register') && <AuthPage mode={view} onSubmit={(values) => handleAuth(view, values)} onSwitch={() => navigate(view === 'login' ? 'register' : 'login')} />}
-          {view === 'settings' && <SettingsPage user={user} onSave={(next) => { setUser(next); notify('個人設定已儲存。') }} />}
+          {view === 'settings' && <SettingsPage user={user} onSave={async (next) => { try { const result = await api.updateProfile(next); setUser(result.user); notify('個人設定已儲存。') } catch (error) { notify(error instanceof Error ? error.message : '保存失败。', 'error') } }} />}
           {view === 'tags' && <TagsPage tags={allTags} entries={publicEntries} onOpen={(id) => navigate('preview', id)} />}
           {view === 'about' && <AboutPage />}
           {view === 'admin' && <AdminPage user={user} users={users} reports={reports} entries={entries} onUpdateReport={updateReport} onCreateUser={createManagedUser} onSetUserStatus={setUserStatus} onSetUserRole={setUserRole} onUpdatePassword={updateManagedPassword} onDeleteUser={deleteManagedUser} onModerateEntry={moderateEntry} onViewEntry={(id) => { setAdminPreview(true); navigate('preview', id) }} />}
+          </>}
         </main>
         <Footer />
       </BrowserFrame>
@@ -522,10 +491,10 @@ function AdminPage({ user, users, reports, entries, onUpdateReport, onCreateUser
   reports: Report[]
   entries: JournalEntry[]
   onUpdateReport: (report: Report, status: Report['status']) => void
-  onCreateUser: (values: { displayName: string; username: string; email: string; password: string; role: User['role'] }) => boolean
+  onCreateUser: (values: { displayName: string; username: string; email: string; password: string; role: User['role'] }) => Promise<boolean>
   onSetUserStatus: (user: User, status: 'active' | 'banned') => void
   onSetUserRole: (user: User, role: User['role']) => void
-  onUpdatePassword: (user: User, password: string) => boolean
+  onUpdatePassword: (user: User, password: string) => Promise<boolean>
   onDeleteUser: (user: User) => void
   onModerateEntry: (entry: JournalEntry, action: 'hide' | 'restore' | 'delete') => void
   onViewEntry: (id: string) => void
@@ -542,15 +511,15 @@ function AdminPage({ user, users, reports, entries, onUpdateReport, onCreateUser
   const publicEntries = entries.filter((entry) => entry.status === 'published' && entry.visibility === 'public')
   const filteredUsers = users.filter((item) => `${item.displayName} ${item.username} ${item.email}`.toLowerCase().includes(query.toLowerCase()))
   const filteredEntries = entries.filter((item) => `${item.title} ${item.authorName} ${item.excerpt}`.toLowerCase().includes(query.toLowerCase()))
-  const submitUser = (event: React.FormEvent) => {
+  const submitUser = async (event: React.FormEvent) => {
     event.preventDefault()
-    if (!onCreateUser(userForm)) return
+    if (!await onCreateUser(userForm)) return
     setUserForm({ displayName: '', username: '', email: '', password: '', role: 'user' })
     setShowUserForm(false)
   }
-  const submitPassword = (event: React.FormEvent) => {
+  const submitPassword = async (event: React.FormEvent) => {
     event.preventDefault()
-    if (!passwordTarget || !onUpdatePassword(passwordTarget, passwordValue)) return
+    if (!passwordTarget || !await onUpdatePassword(passwordTarget, passwordValue)) return
     setPasswordTarget(null)
     setPasswordValue('')
   }

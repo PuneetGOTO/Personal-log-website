@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Deploy the Vite SPA behind Nginx on Ubuntu 22.04/24.04.
+# Deploy the My Diary Node API and SPA behind Nginx on Ubuntu 22.04/24.04.
 # Example:
 #   sudo bash deploy/ubuntu-deploy.sh --domain diary.example.com --email admin@example.com --https
 
@@ -32,7 +32,7 @@ Options:
   --repo-url URL       Git repository URL.
   --branch NAME        Git branch (default: main).
   --app-dir PATH       Install directory (default: /var/www/my-diary).
-  --port NUMBER        Local preview port (default: 4173).
+  --port NUMBER        Local Node application port (default: 4173).
   --email EMAIL        Email used by Certbot when --https is enabled.
   --https              Request/renew a Let's Encrypt certificate.
   --www                Also configure www.DOMAIN and request its certificate.
@@ -81,7 +81,7 @@ fi
 export DEBIAN_FRONTEND=noninteractive
 log "Installing system packages"
 apt-get update
-apt-get install -y ca-certificates curl git nginx ufw
+apt-get install -y ca-certificates curl git nginx openssl ufw
 
 if ! command -v node >/dev/null 2>&1 || [[ "$(node -p 'process.versions.node.split(".")[0]')" -lt 20 ]]; then
   log "Installing Node.js 20 LTS"
@@ -108,6 +108,19 @@ else
 fi
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 
+if [[ ! -f "$APP_DIR/.env" ]]; then
+  if [[ -f "$APP_DIR/data/app.json" ]]; then
+    die "$APP_DIR/data/app.json already exists but .env is missing. Restore the original .env before restarting so existing accounts keep working."
+  fi
+  log "Creating first-boot secrets"
+  ADMIN_INITIAL_PASSWORD="$(openssl rand -hex 16)"
+  DEMO_INITIAL_PASSWORD="$(openssl rand -hex 16)"
+  umask 077
+  printf 'NODE_ENV=production\nPORT=%s\nADMIN_INITIAL_PASSWORD=%s\nDEMO_INITIAL_PASSWORD=%s\n' "$PORT" "$ADMIN_INITIAL_PASSWORD" "$DEMO_INITIAL_PASSWORD" > "$APP_DIR/.env"
+  chown "$APP_USER:$APP_USER" "$APP_DIR/.env"
+  printf '\nInitial admin credentials (store securely and change after login):\n  Email: admin@example.com\n  Password: %s\n' "$ADMIN_INITIAL_PASSWORD"
+fi
+
 log "Installing dependencies and building the production bundle"
 runuser -u "$APP_USER" -- env HOME="$(getent passwd "$APP_USER" | cut -d: -f6)" bash -lc "cd '$APP_DIR' && pnpm install --frozen-lockfile && pnpm build"
 
@@ -115,7 +128,7 @@ PNPM_BIN="$(command -v pnpm)"
 log "Creating systemd service"
 cat > "/etc/systemd/system/$SERVICE_NAME.service" <<EOF
 [Unit]
-Description=My Diary Vite preview server
+Description=My Diary production Node server
 After=network.target
 
 [Service]
@@ -125,7 +138,8 @@ Group=$APP_USER
 WorkingDirectory=$APP_DIR
 Environment=NODE_ENV=production
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
-ExecStart=$PNPM_BIN exec vite preview --host 127.0.0.1 --port $PORT
+EnvironmentFile=-$APP_DIR/.env
+ExecStart=$PNPM_BIN start
 Restart=always
 RestartSec=5
 
@@ -177,7 +191,7 @@ fi
 
 log "Deployment complete"
 printf 'Service: systemctl status %s\n' "$SERVICE_NAME"
-printf 'Local health check: curl -I http://127.0.0.1:%s\n' "$PORT"
+printf 'Local health check: curl http://127.0.0.1:%s/api/health\n' "$PORT"
 if [[ "$ENABLE_HTTPS" == "1" ]]; then
   printf 'Public URL: https://%s\n' "$DOMAIN"
 else
