@@ -126,7 +126,12 @@ function App() {
   const [entries, setEntries] = useState(loadEntries)
   const [reports, setReports] = useState(loadReports)
   const [users, setUsers] = useState<User[]>(loadUsers)
-  const [user, setUser] = useState<User | null>(loadUser)
+  const [user, setUser] = useState<User | null>(() => {
+    const current = loadUser()
+    if (!current) return null
+    if (current.role === 'admin' && current.id !== 'admin-user' && current.roleSource !== 'granted') return { ...current, role: 'user', roleSource: undefined }
+    return current
+  })
   const [view, setView] = useState<View>(initialView)
   const [selectedId, setSelectedId] = useState<string | null>(initialSelection)
   const [adminPreview, setAdminPreview] = useState(false)
@@ -213,13 +218,13 @@ function App() {
       notify('邮箱或密码不正确。', 'error')
       return
     }
-    const isAdmin = values.email.toLowerCase().includes('admin')
     const nextUser: User = existingUser ?? {
-      id: values.email.toLowerCase().includes('demo') ? 'demo-user' : `user-${Date.now()}`,
-      username: values.username || values.email.split('@')[0],
-      displayName: values.displayName || values.email.split('@')[0],
+      id: `user-${Date.now()}`,
+      username: values.username || normalizedEmail.split('@')[0],
+      displayName: values.displayName || normalizedEmail.split('@')[0],
       email: values.email,
-      role: isAdmin ? 'admin' : 'user',
+      role: 'user',
+      roleSource: undefined,
       bio: '把日子寫下來，也把自己留在日子裡。',
     }
     const activeUser: User = { ...nextUser, email: normalizedEmail, password: nextUser.password ?? values.password, status: 'active', createdAt: nextUser.createdAt ?? new Date().toISOString(), lastSeenAt: new Date().toISOString() }
@@ -280,7 +285,7 @@ function App() {
       return false
     }
     const stamp = new Date().toISOString()
-    const next: User = { id: `user-${Date.now()}`, username: values.username.trim() || email.split('@')[0], displayName: values.displayName.trim(), email, password: values.password, role: values.role, bio: '', status: 'active', createdAt: stamp }
+    const next: User = { id: `user-${Date.now()}`, username: values.username.trim() || email.split('@')[0], displayName: values.displayName.trim(), email, password: values.password, role: values.role, roleSource: values.role === 'admin' ? 'granted' : undefined, bio: '', status: 'active', createdAt: stamp }
     setUsers((current) => [next, ...current])
     notify('新账号已建立。')
     return true
@@ -301,7 +306,7 @@ function App() {
       notify('不能修改当前管理员的角色。', 'error')
       return
     }
-    setUsers((current) => current.map((item) => item.id === target.id ? { ...item, role } : item))
+    setUsers((current) => current.map((item) => item.id === target.id ? { ...item, role, roleSource: role === 'admin' ? 'granted' : undefined } : item))
     notify(role === 'admin' ? '账号已升级为管理员。' : '管理员权限已收回。', 'info')
   }
 
@@ -491,7 +496,7 @@ function AuthPage({ mode, onSubmit, onSwitch }: { mode: 'login' | 'register'; on
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [username, setUsername] = useState('')
-  return <PageContainer className="auth-page"><div className="auth-card"><div className="auth-mark"><BookOpen size={25} /></div><span className="eyebrow">{mode === 'login' ? 'WELCOME BACK' : 'A NEW PAGE'}</span><h1>{mode === 'login' ? '登入你的日誌' : '建立一個帳號'}</h1><p>{mode === 'login' ? '回到你留下的每一段日子。' : '準備一個只屬於你的書寫空間。'}</p><form onSubmit={(event) => { event.preventDefault(); if (email && password) onSubmit({ email, password, displayName, username }) }}><label className="form-field"><span>Email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required placeholder="you@example.com" /></label>{mode === 'register' && <div className="form-grid"><label className="form-field"><span>顯示名稱</span><input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="你的名字" /></label><label className="form-field"><span>Username</span><input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="your-name" /></label></div>}<label className="form-field"><span>密碼</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required placeholder="至少 8 個字元" /></label><Button type="submit" variant="yellow" className="full-button"><LogIn size={16} />{mode === 'login' ? '登入' : '建立帳號'}</Button></form><button className="switch-auth" onClick={onSwitch}>{mode === 'login' ? '還沒有帳號？註冊' : '已經有帳號？登入'} <ArrowRight size={15} /></button><p className="auth-note">示範登入可使用 demo@example.com；含有 admin 的 email 會開啟管理畫面。</p></div></PageContainer>
+  return <PageContainer className="auth-page"><div className="auth-card"><div className="auth-mark"><BookOpen size={25} /></div><span className="eyebrow">{mode === 'login' ? 'WELCOME BACK' : 'A NEW PAGE'}</span><h1>{mode === 'login' ? '登入你的日誌' : '建立一個帳號'}</h1><p>{mode === 'login' ? '回到你留下的每一段日子。' : '準備一個只屬於你的書寫空間。'}</p><form onSubmit={(event) => { event.preventDefault(); if (email && password) onSubmit({ email, password, displayName, username }) }}><label className="form-field"><span>Email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required placeholder="you@example.com" /></label>{mode === 'register' && <div className="form-grid"><label className="form-field"><span>顯示名稱</span><input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="你的名字" /></label><label className="form-field"><span>Username</span><input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="your-name" /></label></div>}<label className="form-field"><span>密碼</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required placeholder="至少 8 個字元" /></label><Button type="submit" variant="yellow" className="full-button"><LogIn size={16} />{mode === 'login' ? '登入' : '建立帳號'}</Button></form><button className="switch-auth" onClick={onSwitch}>{mode === 'login' ? '還沒有帳號？註冊' : '已經有帳號？登入'} <ArrowRight size={15} /></button><p className="auth-note">示範帳號可使用 demo@example.com；管理员权限只能由现有管理员授予。</p></div></PageContainer>
 }
 
 function SettingsPage({ user, onSave }: { user: User | null; onSave: (user: User) => void }) {

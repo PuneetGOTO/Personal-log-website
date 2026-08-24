@@ -2,6 +2,7 @@ export type Visibility = 'private' | 'public' | 'unlisted'
 export type EntryStatus = 'draft' | 'published' | 'archived'
 export type UserRole = 'user' | 'admin'
 export type UserStatus = 'active' | 'banned'
+export type UserRoleSource = 'seeded' | 'granted'
 
 export type JournalEntry = {
   id: string
@@ -26,6 +27,7 @@ export type User = {
   displayName: string
   email: string
   role: UserRole
+  roleSource?: UserRoleSource
   bio: string
   password?: string
   status?: UserStatus

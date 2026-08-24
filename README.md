@@ -20,6 +20,8 @@ Seeded demo credentials:
 
 Change these immediately for any public demo. They are only convenience credentials for this prototype.
 
+New registrations always start with the `user` role. An email containing `admin` does not grant administrator access; administrator access can only come from the seeded admin account or an explicit role change in the admin workspace.
+
 ## Local development
 
 Requirements: Node.js 20 or newer, Git, and pnpm 9 or newer.

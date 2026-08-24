@@ -77,6 +77,7 @@ const seedUsers: User[] = [
     displayName: '空间管理员',
     email: 'admin@example.com',
     role: 'admin',
+    roleSource: 'seeded',
     bio: '照看这间安静的公共空间。',
     password: 'admin1234',
     status: 'active',
@@ -112,8 +113,10 @@ export function saveUser(user: User | null) {
 }
 
 export function loadUsers() {
-  return read<User[]>(usersKey, seedUsers).map((item) => ({
+  return read<User[]>(usersKey, seedUsers).map((item): User => ({
     ...item,
+    role: item.id === 'admin-user' || item.roleSource === 'granted' ? 'admin' : 'user',
+    roleSource: item.id === 'admin-user' ? 'seeded' : item.roleSource === 'granted' ? 'granted' : undefined,
     status: item.status ?? 'active',
     createdAt: item.createdAt ?? now,
     password: item.password ?? (item.role === 'admin' ? 'admin1234' : 'change-me-now'),
