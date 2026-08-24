@@ -125,6 +125,29 @@ log "Installing dependencies and building the production bundle"
 runuser -u "$APP_USER" -- env HOME="$(getent passwd "$APP_USER" | cut -d: -f6)" bash -lc "cd '$APP_DIR' && pnpm install --frozen-lockfile && pnpm build"
 
 PNPM_BIN="$(command -v pnpm)"
+if [[ -f "/etc/systemd/system/$SERVICE_NAME.service" ]]; then
+  log "Stopping the previous application process"
+  systemctl stop "$SERVICE_NAME" || true
+fi
+
+port_pids="$(ss -ltnp "sport = :$PORT" 2>/dev/null | sed -n 's/.*pid=\([0-9]\+\),.*/\1/p' | sort -u)"
+for pid in $port_pids; do
+  [[ -d "/proc/$pid" ]] || continue
+  command_line="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
+  process_cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+  if [[ "$process_cwd" == "$APP_DIR" || "$command_line" == *"$APP_DIR"* || "$command_line" == *"vite preview"* ]]; then
+    log "Terminating stale listener on port $PORT (pid $pid)"
+    kill "$pid" 2>/dev/null || true
+    for _ in {1..20}; do
+      kill -0 "$pid" 2>/dev/null || break
+      sleep 0.25
+    done
+    if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid" 2>/dev/null || true; fi
+  else
+    die "Port $PORT is occupied by an unrelated process (pid $pid). Stop it manually before deploying."
+  fi
+done
+
 log "Creating systemd service"
 cat > "/etc/systemd/system/$SERVICE_NAME.service" <<EOF
 [Unit]
@@ -178,9 +201,11 @@ fi
 systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
 systemctl restart "$SERVICE_NAME"
-if ! curl --fail --silent --show-error --max-time 10 "http://127.0.0.1:$PORT/api/health" | grep -q '"ok":true'; then
+health_response="$(curl --fail --silent --show-error --max-time 10 "http://127.0.0.1:$PORT/api/health" || true)"
+if [[ "$health_response" != '{"ok":true}' ]] || ! systemctl is-active --quiet "$SERVICE_NAME"; then
   systemctl --no-pager --full status "$SERVICE_NAME" || true
-  die "The Node API health check failed. Refusing to expose an old Vite preview or a broken service."
+  journalctl -u "$SERVICE_NAME" -n 40 --no-pager || true
+  die "The Node API health check failed (received: $health_response). Refusing to expose an old Vite preview or a broken service."
 fi
 systemctl reload nginx
 
