@@ -116,7 +116,7 @@ if [[ ! -f "$APP_DIR/.env" ]]; then
   ADMIN_INITIAL_PASSWORD="$(openssl rand -hex 16)"
   DEMO_INITIAL_PASSWORD="$(openssl rand -hex 16)"
   umask 077
-  printf 'NODE_ENV=production\nPORT=%s\nADMIN_INITIAL_PASSWORD=%s\nDEMO_INITIAL_PASSWORD=%s\n' "$PORT" "$ADMIN_INITIAL_PASSWORD" "$DEMO_INITIAL_PASSWORD" > "$APP_DIR/.env"
+  printf 'PORT=%s\nADMIN_INITIAL_PASSWORD=%s\nDEMO_INITIAL_PASSWORD=%s\n' "$PORT" "$ADMIN_INITIAL_PASSWORD" "$DEMO_INITIAL_PASSWORD" > "$APP_DIR/.env"
   chown "$APP_USER:$APP_USER" "$APP_DIR/.env"
   printf '\nInitial admin credentials (store securely and change after login):\n  Email: admin@example.com\n  Password: %s\n' "$ADMIN_INITIAL_PASSWORD"
 fi

@@ -63,7 +63,6 @@ pnpm build
 
 ~~~
 @"
-NODE_ENV=production
 PORT=4173
 ADMIN_INITIAL_PASSWORD=replace-with-a-long-random-password
 DEMO_INITIAL_PASSWORD=replace-with-a-long-random-password
@@ -115,7 +114,6 @@ Create /var/www/my-diary/.env with mode 600:
 ~~~
 umask 077
 cat > .env <<'EOF'
-NODE_ENV=production
 PORT=4173
 ADMIN_INITIAL_PASSWORD=replace-with-a-long-random-password
 DEMO_INITIAL_PASSWORD=replace-with-a-long-random-password
