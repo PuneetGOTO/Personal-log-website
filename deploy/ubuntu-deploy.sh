@@ -120,11 +120,14 @@ if [[ ! -f "$APP_DIR/.env" ]]; then
   chown "$APP_USER:$APP_USER" "$APP_DIR/.env"
   printf '\nInitial admin credentials (store securely and change after login):\n  Email: admin@example.com\n  Password: %s\n' "$ADMIN_INITIAL_PASSWORD"
 fi
+# NODE_ENV is supplied by systemd. Leaving it in .env makes Vite print a misleading warning during builds.
+sed -i '/^NODE_ENV=/d' "$APP_DIR/.env"
+chmod 600 "$APP_DIR/.env"
 
 log "Installing dependencies and building the production bundle"
 runuser -u "$APP_USER" -- env HOME="$(getent passwd "$APP_USER" | cut -d: -f6)" bash -lc "cd '$APP_DIR' && pnpm install --frozen-lockfile && pnpm build"
 
-PNPM_BIN="$(command -v pnpm)"
+NODE_BIN="$(command -v node)"
 if [[ -f "/etc/systemd/system/$SERVICE_NAME.service" ]]; then
   log "Stopping the previous application process"
   systemctl stop "$SERVICE_NAME" || true
@@ -162,7 +165,7 @@ WorkingDirectory=$APP_DIR
 Environment=NODE_ENV=production
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
 EnvironmentFile=-$APP_DIR/.env
-ExecStart=$PNPM_BIN start
+ExecStart=$NODE_BIN server/index.mjs
 Restart=always
 RestartSec=5
 
@@ -201,7 +204,12 @@ fi
 systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
 systemctl restart "$SERVICE_NAME"
-health_response="$(curl --fail --silent --show-error --max-time 10 "http://127.0.0.1:$PORT/api/health" || true)"
+health_response=""
+for _ in {1..30}; do
+  health_response="$(curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:$PORT/api/health" || true)"
+  if [[ "$health_response" == '{"ok":true}' ]] && systemctl is-active --quiet "$SERVICE_NAME"; then break; fi
+  sleep 1
+done
 if [[ "$health_response" != '{"ok":true}' ]] || ! systemctl is-active --quiet "$SERVICE_NAME"; then
   systemctl --no-pager --full status "$SERVICE_NAME" || true
   journalctl -u "$SERVICE_NAME" -n 40 --no-pager || true

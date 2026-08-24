@@ -120,7 +120,7 @@ DEMO_INITIAL_PASSWORD=replace-with-a-long-random-password
 EOF
 ~~~
 
-Run pnpm start through systemd as the application user, then reverse proxy 127.0.0.1:4173 from Nginx. Do not bind the Node service to 0.0.0.0.
+Run `node server/index.mjs` through systemd as the application user, then reverse proxy 127.0.0.1:4173 from Nginx. Do not bind the Node service to 0.0.0.0.
 
 ## Ubuntu automated deployment
 
@@ -192,7 +192,7 @@ After a new commit, rerun the same deployment command. It fast-forwards the chec
 ## Troubleshooting
 
 - 502 Bad Gateway: check systemctl status my-diary and curl http://127.0.0.1:4173/api/health.
-- If /api/health returns the HTML homepage instead of {"ok":true}, the server is still running Vite preview. Pull main and rerun deploy/ubuntu-deploy.sh so systemd uses pnpm start (Node API).
+- If /api/health returns the HTML homepage instead of {"ok":true}, the server is still running Vite preview. Pull main and rerun deploy/ubuntu-deploy.sh so systemd uses `node server/index.mjs` (Node API).
 - If an old process still owns port 4173, the deployment script now stops only the existing My Diary/Vite listener, verifies the port, then restarts systemd. You can inspect the owner with `sudo ss -ltnp 'sport = :4173'`.
 - Blocked request host error: add the public hostname to server.allowedHosts and preview.allowedHosts in vite.config.ts, then rebuild. The current deployment already includes diary.learnmath2.xyz.
 - Certbot validation fails: verify DNS, router forwarding, cloud security rules, UFW, and that Nginx listens on port 80.
