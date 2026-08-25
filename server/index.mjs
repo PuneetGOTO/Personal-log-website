@@ -162,7 +162,7 @@ function requireAdmin(request, response) {
 }
 function visibleEntries(user) {
   return db.entries.filter((entry) => (
-    (entry.status === 'published' && entry.visibility === 'public' && db.users.find((item) => item.id === entry.authorId)?.status !== 'banned')
+    (entry.status === 'published' && (entry.visibility === 'public' || entry.visibility === 'unlisted') && db.users.find((item) => item.id === entry.authorId)?.status !== 'banned')
     || Boolean(user && (entry.authorId === user.id || user.role === 'admin'))
   ))
 }
