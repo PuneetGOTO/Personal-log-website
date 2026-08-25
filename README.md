@@ -21,6 +21,20 @@ There is no fixed public administrator password. On the first start, the server 
 
 Old browser localStorage demo data is not imported into the server database. This is intentional: client storage must never become an authority for accounts or roles.
 
+### Lost administrator password
+
+The current password cannot be viewed because only a salted hash is stored in `data/app.json`. Reset it from the server console. This keeps the new password out of shell history and the process list:
+
+~~~bash
+cd /var/www/my-diary
+read -rsp 'New admin password: ' ADMIN_PASSWORD; echo
+printf '%s' "$ADMIN_PASSWORD" | sudo -u diary pnpm admin:reset-password
+unset ADMIN_PASSWORD
+sudo systemctl restart my-diary
+~~~
+
+Replace `diary` with the Linux user running the service if your deployment uses a different account. The reset command is local-only and does not add a public password-reset endpoint.
+
 ## Local development
 
 Requirements: Node.js 20 or newer, Git, and pnpm 9 or newer.
