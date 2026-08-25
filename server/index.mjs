@@ -23,11 +23,13 @@ const isInsidePublicDir = (file) => {
 
 const now = () => new Date().toISOString()
 const id = (prefix) => `${prefix}-${crypto.randomUUID()}`
-const hashPassword = (password, salt = crypto.randomBytes(16).toString('hex')) => ({ salt, hash: crypto.scryptSync(password, salt, 64).toString('hex') })
+const hashPassword = (password, salt = crypto.randomBytes(16).toString('hex')) => ({ passwordSalt: salt, passwordHash: crypto.scryptSync(password, salt, 64).toString('hex') })
 const verifyPassword = (password, user) => {
-  if (!user.passwordHash || !user.passwordSalt) return false
-  const actual = Buffer.from(hashPassword(password, user.passwordSalt).hash, 'hex')
-  const expected = Buffer.from(user.passwordHash, 'hex')
+  const salt = user.passwordSalt || user.salt
+  const storedHash = user.passwordHash || user.hash
+  if (!salt || !storedHash) return false
+  const actual = Buffer.from(hashPassword(password, salt).passwordHash, 'hex')
+  const expected = Buffer.from(storedHash, 'hex')
   return actual.length === expected.length && crypto.timingSafeEqual(actual, expected)
 }
 
@@ -112,7 +114,7 @@ function saveDb() {
 
 function publicUser(user) {
   if (!user) return null
-  const { passwordHash, passwordSalt, ...safe } = user
+  const { passwordHash, passwordSalt, hash, salt, ...safe } = user
   return safe
 }
 
@@ -253,7 +255,11 @@ async function api(request, response, pathname) {
     }
     if (userMatch && method === 'PATCH' && userMatch[1]) {
       const target = db.users.find((item) => item.id === userMatch[1]); if (!target) return fail(response, 404, 'User not found')
-      if (input.password !== undefined) { if (String(input.password).length < 8) return fail(response, 400, 'Password must be at least 8 characters'); Object.assign(target, hashPassword(input.password)) }
+      if (input.password !== undefined) {
+        if (String(input.password).length < 8) return fail(response, 400, 'Password must be at least 8 characters')
+        Object.assign(target, hashPassword(input.password)); delete target.hash; delete target.salt
+        for (const [token, session] of sessions) if (session.userId === target.id) sessions.delete(token)
+      }
       if (input.status === 'banned' && target.id === user.id) return fail(response, 400, 'You cannot ban the current admin')
       if (input.role && target.id === user.id) return fail(response, 400, 'You cannot change the current admin role')
       if (input.status === 'active' || input.status === 'banned') target.status = input.status

@@ -29,6 +29,8 @@ if (!admin) {
 const salt = crypto.randomBytes(16).toString('hex')
 admin.passwordSalt = salt
 admin.passwordHash = crypto.scryptSync(password, salt, 64).toString('hex')
+delete admin.hash
+delete admin.salt
 admin.lastSeenAt = new Date().toISOString()
 
 const temporary = `${dataFile}.tmp`
