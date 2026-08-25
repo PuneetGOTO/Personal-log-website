@@ -208,7 +208,8 @@ function App() {
     }
     const stamp = new Date().toISOString()
     const entry: JournalEntry = {
-      id: existing?.id ?? `entry-${Date.now()}`,
+      // New entries must use POST; the server assigns their canonical ID.
+      id: existing?.id ?? '',
       authorId: existing?.authorId ?? user.id,
       authorName: user.displayName,
       title: values.title.trim(),

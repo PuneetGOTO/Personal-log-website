@@ -20,7 +20,10 @@ export const api = {
   register: (values: { email: string; password: string; displayName: string; username: string }) => request<{ user: User }>('/api/auth/register', { method: 'POST', body: JSON.stringify(values) }),
   logout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
   updateProfile: (values: { displayName: string; username: string; bio: string }) => request<{ user: User }>('/api/auth/me', { method: 'PATCH', body: JSON.stringify(values) }),
-  saveEntry: (entry: Partial<JournalEntry> & { id?: string; title: string; content: string; mood: string; entryDate: string; visibility: Visibility; status: string; tags: string[] }) => request<JournalEntry>(entry.id ? `/api/entries/${entry.id}` : '/api/entries', { method: entry.id ? 'PATCH' : 'POST', body: JSON.stringify(entry) }),
+  saveEntry: (entry: Partial<JournalEntry> & { id?: string; title: string; content: string; mood: string; entryDate: string; visibility: Visibility; status: string; tags: string[] }) => {
+    const isExisting = Boolean(entry.id)
+    return request<JournalEntry>(isExisting ? `/api/entries/${entry.id}` : '/api/entries', { method: isExisting ? 'PATCH' : 'POST', body: JSON.stringify(entry) })
+  },
   deleteEntry: (entryId: string) => request<{ ok: true }>(`/api/entries/${entryId}`, { method: 'DELETE' }),
   report: (entryId: string, reason: string) => request<Report>('/api/reports', { method: 'POST', body: JSON.stringify({ entryId, reason }) }),
   createUser: (values: { displayName: string; username: string; email: string; password: string; role: UserRole }) => request<User>('/api/admin/users', { method: 'POST', body: JSON.stringify(values) }),
