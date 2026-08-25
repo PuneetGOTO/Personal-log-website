@@ -16,6 +16,8 @@ const sessions = new Map()
 const loginAttempts = new Map()
 const loginWindowMs = 15 * 60 * 1000
 const maxLoginAttempts = 10
+const locationCache = new Map()
+const locationCacheTtlMs = 1000 * 60 * 60 * 6
 const isInsidePublicDir = (file) => {
   const relative = path.relative(publicDir, file)
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
@@ -35,6 +37,41 @@ const verifyPassword = (password, user) => {
 
 function clientAddress(request) {
   return request.headers['x-real-ip'] || request.socket.remoteAddress || 'unknown'
+}
+
+function requestIp(request) {
+  // Nginx overwrites X-Real-IP with the connected client address; do not trust a client-supplied X-Forwarded-For chain.
+  const address = request.headers['x-real-ip'] || request.socket.remoteAddress || ''
+  return String(address).trim().replace(/^::ffff:/i, '')
+}
+
+function isPrivateIp(ip) {
+  if (!ip || ip === 'unknown' || ip === '127.0.0.1' || ip === '::1') return true
+  if (/^10\./.test(ip) || /^192\.168\./.test(ip) || /^172\.(1[6-9]|2\d|3[0-1])\./.test(ip)) return true
+  if (/^fc00:/i.test(ip) || /^fe80:/i.test(ip)) return true
+  return false
+}
+
+async function locationForRequest(request) {
+  const ip = requestIp(request)
+  if (isPrivateIp(ip)) return '本地'
+  const cached = locationCache.get(ip)
+  if (cached && cached.expiresAt > Date.now()) return cached.location
+
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 2500)
+    const response = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}?lang=zh-CN`, { headers: { Accept: 'application/json', 'User-Agent': 'my-diary/1.0' }, signal: controller.signal })
+    clearTimeout(timeout)
+    if (!response.ok) throw new Error(`Geolocation request failed (${response.status})`)
+    const payload = await response.json()
+    if (payload.success === false) throw new Error(payload.message || 'Geolocation lookup failed')
+    const location = [payload.country, payload.region, payload.city].filter((part) => typeof part === 'string' && part.trim()).map((part) => part.trim()).slice(0, 3).join(' · ') || '未知地区'
+    locationCache.set(ip, { location, expiresAt: Date.now() + locationCacheTtlMs })
+    return location
+  } catch {
+    return '未知地区'
+  }
 }
 
 function allowLogin(request) {
@@ -106,6 +143,8 @@ function readDb() {
 }
 
 let db = readDb()
+// Older entries predate location labels; keep the field present for a consistent article UI.
+db.entries = db.entries.map((entry) => ({ ...entry, location: entry.location || '地区未知' }))
 function saveDb() {
   const temporary = `${dataFile}.tmp`
   fs.writeFileSync(temporary, JSON.stringify(db, null, 2), { mode: 0o600 })
@@ -181,6 +220,7 @@ async function api(request, response, pathname) {
   const method = request.method || 'GET'
   if (method !== 'GET' && request.headers.origin && request.headers.origin !== `http://${request.headers.host}` && request.headers.origin !== `https://${request.headers.host}`) return fail(response, 403, 'Origin rejected')
   if (pathname === '/api/health' && method === 'GET') return sendJson(response, 200, { ok: true })
+  if (pathname === '/api/location' && method === 'GET') return sendJson(response, 200, { location: await locationForRequest(request) })
   if (pathname === '/api/bootstrap' && method === 'GET') {
     const account = sessionAccount(request)
     const user = account?.status === 'banned' ? null : account
@@ -229,7 +269,7 @@ async function api(request, response, pathname) {
     if (!user) return fail(response, 401, 'Authentication required')
     const input = await body(request); const normalized = normalizeEntryInput(input); if (!normalized) return fail(response, 400, 'Title, content, and a valid entry date are required')
     const stamp = now()
-    const entry = { ...normalized, id: id('entry'), authorId: user.id, authorName: user.displayName, createdAt: stamp, updatedAt: stamp, publishedAt: normalized.status === 'published' ? stamp : null }
+    const entry = { ...normalized, location: await locationForRequest(request), id: id('entry'), authorId: user.id, authorName: user.displayName, createdAt: stamp, updatedAt: stamp, publishedAt: normalized.status === 'published' ? stamp : null }
     db.entries.unshift(entry); saveDb(); return sendJson(response, 201, entry)
   }
   const entryMatch = pathname.match(/^\/api\/entries\/([^/]+)$/)

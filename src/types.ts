@@ -13,6 +13,8 @@ export type JournalEntry = {
   excerpt: string
   mood: string
   entryDate: string
+  /** Approximate region detected from the request IP; raw IPs are never stored. */
+  location?: string
   visibility: Visibility
   status: EntryStatus
   tags: string[]

@@ -10,6 +10,7 @@ My Diary is a warm-white personal journal with hand-drawn black lines, handwritt
 - New registration always creates a normal user. An email containing admin never grants administrator access.
 - Administrators can create accounts, grant or revoke roles, ban or unban users, change passwords, delete accounts, view entries, hide or restore entries, delete entries, and resolve reports.
 - Login attempts are rate limited in memory (10 attempts per IP per 15 minutes).
+- The homepage shows an approximate visitor region (country, region, and city when available). The server keeps only the formatted region label on an entry, never the raw IP. Region lookup uses the server-side `ipwho.is` JSON endpoint and falls back to `本地` or `未知地区` when the address is private or the lookup is unavailable.
 
 The production server is server/index.mjs. It serves the built Vite files and the /api routes from one process. Runtime data is written to data/app.json with restrictive file permissions; .env and data/ are ignored by Git.
 

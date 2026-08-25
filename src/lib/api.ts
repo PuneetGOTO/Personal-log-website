@@ -1,6 +1,7 @@
 import type { JournalEntry, Report, User, UserRole, Visibility } from '../types'
 
 export type BanNotice = { email: string; reason: string }
+export type VisitorLocation = { location: string }
 type Bootstrap = { user: User | null; users: User[]; entries: JournalEntry[]; reports: Report[]; banNotice: BanNotice | null }
 async function request<T>(path: string, options: RequestInit = {}) {
   const response = await fetch(path, { credentials: 'include', headers: { 'Content-Type': 'application/json', ...(options.headers ?? {}) }, ...options })
@@ -22,6 +23,7 @@ export const api = {
     }
     return { user: payload.user ?? null, entries: payload.entries, users: payload.users, reports: payload.reports, banNotice: payload.banNotice ?? null } satisfies Bootstrap
   },
+  location: () => request<VisitorLocation>('/api/location'),
   login: (values: { email: string; password: string }) => request<{ user: User }>('/api/auth/login', { method: 'POST', body: JSON.stringify(values) }),
   register: (values: { email: string; password: string; displayName: string; username: string }) => request<{ user: User }>('/api/auth/register', { method: 'POST', body: JSON.stringify(values) }),
   logout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),

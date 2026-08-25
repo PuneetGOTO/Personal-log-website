@@ -18,6 +18,7 @@ import {
   LockKeyhole,
   LogIn,
   Menu,
+  MapPin,
   Moon,
   Pencil,
   Plus,
@@ -137,6 +138,7 @@ function App() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
   const [reportingId, setReportingId] = useState<string | null>(null)
   const [banNotice, setBanNotice] = useState<BanNotice | null>(null)
+  const [visitorLocation, setVisitorLocation] = useState('世界各地')
 
   useEffect(() => {
     api.bootstrap().then((snapshot) => {
@@ -146,6 +148,12 @@ function App() {
       setUser(snapshot.user)
       setBanNotice(snapshot.banNotice)
     }).catch(() => notify('无法连接服务器，请稍后重试。', 'error')).finally(() => setReady(true))
+  }, [])
+
+  useEffect(() => {
+    api.location().then((snapshot) => {
+      if (snapshot.location) setVisitorLocation(snapshot.location)
+    }).catch(() => undefined)
   }, [])
 
   useEffect(() => {
@@ -336,7 +344,7 @@ function App() {
         <SiteHeader user={user} view={view} night={night} mobileNav={mobileNav} onToggleNight={() => setNight((value) => !value)} onToggleNav={() => setMobileNav((value) => !value)} onNavigate={navigate} onLogout={async () => { await api.logout().catch(() => undefined); setUser(null); setEntries([]); setReports([]); setUsers([]); notify('已登出。', 'info'); navigate('home') }} />
         <main className="page-shell">
           {!ready ? <div className="permission-state"><BookOpen size={28} /><h2>正在连接服务器</h2><p>正在读取日誌与权限，请稍候。</p></div> : <>
-          {view === 'home' && <HomePage user={user} entries={publicEntries} ownEntries={ownEntries} onNavigate={navigate} />}
+          {view === 'home' && <HomePage user={user} entries={publicEntries} ownEntries={ownEntries} location={visitorLocation} onNavigate={navigate} />}
           {view === 'public' && <PublicPage entries={publicEntries} allTags={allTags} onOpen={(id) => navigate('preview', id)} />}
           {view === 'mine' && <MinePage entries={ownEntries} onNew={() => navigate('new')} onEdit={(id) => navigate('edit', id)} onArchive={archiveEntry} onPreview={(id) => navigate('preview', id)} />}
           {view === 'drafts' && <DraftsPage entries={ownEntries.filter((entry) => entry.status === 'draft')} onNew={() => navigate('new')} onEdit={(id) => navigate('edit', id)} onPreview={(id) => navigate('preview', id)} />}
@@ -395,7 +403,7 @@ function Button({ children, variant = 'outline', onClick, type = 'button', disab
   return <button type={type} disabled={disabled} className={`action-button action-${variant} ${className}`} onClick={onClick}>{children}</button>
 }
 
-function HomePage({ user, entries, ownEntries, onNavigate }: { user: User | null; entries: JournalEntry[]; ownEntries: JournalEntry[]; onNavigate: (view: View, id?: string | null) => void }) {
+function HomePage({ user, entries, ownEntries, location, onNavigate }: { user: User | null; entries: JournalEntry[]; ownEntries: JournalEntry[]; location: string; onNavigate: (view: View, id?: string | null) => void }) {
   const [currentDate, setCurrentDate] = useState(getLocalDate)
   useEffect(() => {
     const refreshDate = () => setCurrentDate(getLocalDate())
@@ -404,6 +412,7 @@ function HomePage({ user, entries, ownEntries, onNavigate }: { user: User | null
   }, [])
   const cards = user && ownEntries.length ? ownEntries.filter((entry) => entry.status === 'published').slice(0, 3) : entries.slice(0, 3)
   return <PageContainer className="home-page">
+    <div className="location-greeting home-location-greeting"><MapPin size={17} aria-hidden="true" /><span>你好，{location}的朋友</span></div>
     <section className="home-hero"><span className="hero-line">✦</span><h1>Welcome to My Diary</h1><p>｜在這一裏，你可以把每天美好的事件記錄下來｜</p></section>
     <section className="today-snapshot"><span className="section-label">今天日期：</span><strong>{formatDate(currentDate)}</strong><span className="today-mood">Today I’m feeling: <span className="mood-emoji">{moodOptions.find((item) => item.value === (user && ownEntries[0]?.mood) || 'Happy')?.icon ?? '🌞'}</span> {user && ownEntries[0] ? ownEntries[0].mood : 'Happy'}</span></section>
     <section className="recent-section"><div className="section-heading"><h2>最近日誌 <Star size={22} fill="var(--accent-yellow)" strokeWidth={1.5} aria-hidden="true" /></h2><Button variant="outline" onClick={() => onNavigate(user ? 'new' : 'login')}><Plus size={17} />寫一篇日誌</Button></div><JournalList entries={cards} onOpen={(id) => onNavigate('preview', id)} emptyTitle="還沒有公開日誌" emptyText="寫下今天的一小段，讓它成為未來的收藏。" /></section>
@@ -433,7 +442,7 @@ function JournalList({ entries, onOpen, emptyTitle, emptyText }: { entries: Jour
 function JournalCard({ entry, onOpen, actions }: { entry: JournalEntry; onOpen: () => void; actions?: React.ReactNode }) {
   const mood = moodOptions.find((item) => item.value === entry.mood)
   return <article className="journal-card">
-    <button className="card-main" onClick={onOpen} aria-label={`閱讀：${entry.title}`}><div className="card-top"><span>{formatDate(entry.entryDate)}</span><span className={`visibility-badge visibility-${entry.visibility}`}>{entry.visibility === 'private' ? <LockKeyhole size={12} /> : entry.visibility === 'unlisted' ? <Link2 size={12} /> : <Globe2 size={12} />}{entry.visibility}</span></div><h3>{entry.title || '未命名日誌'}</h3><p>{entry.excerpt || '還沒有摘要。'}</p><span className="card-read">Read more <ArrowRight size={15} /></span></button>
+    <button className="card-main" onClick={onOpen} aria-label={`閱讀：${entry.title}`}><div className="card-top"><span>{formatDate(entry.entryDate)}</span><span className={`visibility-badge visibility-${entry.visibility}`}>{entry.visibility === 'private' ? <LockKeyhole size={12} /> : entry.visibility === 'unlisted' ? <Link2 size={12} /> : <Globe2 size={12} />}{entry.visibility}</span></div><div className="entry-location card-location"><MapPin size={14} aria-hidden="true" /><span>{entry.location || '地區未知'}</span></div><h3>{entry.title || '未命名日誌'}</h3><p>{entry.excerpt || '還沒有摘要。'}</p><span className="card-read">Read more <ArrowRight size={15} /></span></button>
     <div className="card-bottom"><span className="card-mood">{mood?.icon ?? '🌞'} {entry.mood}</span><span className="card-tags">{entry.tags.slice(0, 2).map((tag) => <span key={tag}>#{tag}</span>)}</span>{actions && <span className="card-actions">{actions}</span>}</div>
   </article>
 }
@@ -476,7 +485,7 @@ function PreviewPage({ entry, user, authorBanned, onBack, onEdit, onReport }: { 
   const own = user?.id === entry.authorId
   const canRead = own || !authorBanned && entry.status === 'published' && (entry.visibility === 'public' || entry.visibility === 'unlisted') || user?.role === 'admin'
   if (!canRead) return <PageContainer><div className="permission-state"><LockKeyhole size={28} /><h2>這是一篇私人日誌</h2><p>只有作者可以閱讀這裡的內容。</p><Button variant="outline" onClick={onBack}><ArrowLeft size={16} />返回</Button></div></PageContainer>
-  return <PageContainer className="preview-page"><div className="preview-toolbar"><Button variant="text" onClick={onBack}><ArrowLeft size={16} />返回列表</Button><div className="button-row">{own && <Button variant="outline" onClick={() => onEdit(entry.id)}><Pencil size={15} />編輯</Button>}{!own && <Button variant="text" onClick={() => onReport(entry.id)}><Flag size={15} />檢舉</Button>}<Button variant="text" onClick={() => navigator.clipboard?.writeText(window.location.href)}><Link2 size={15} />複製連結</Button></div></div><article className="entry-reading"><div className="entry-heading"><span className="entry-date"><CalendarDays size={16} />{formatLongDate(entry.entryDate)}</span><span className={`visibility-badge visibility-${entry.visibility}`}>{entry.visibility}</span><h1>{entry.title}</h1><div className="entry-byline"><span>{entry.authorName}</span><span>·</span><span>{entry.mood} {moodOptions.find((item) => item.value === entry.mood)?.icon}</span></div></div><div className="entry-content">{entry.content.split('\n').map((paragraph, index) => <p key={`${entry.id}-${index}`}>{paragraph || '\u00a0'}</p>)}</div><div className="entry-footer"><div className="tag-row">{entry.tags.map((tag) => <span key={tag}>#{tag}</span>)}</div><span>最後更新於 {formatDate(entry.updatedAt.slice(0, 10))}</span></div></article></PageContainer>
+  return <PageContainer className="preview-page"><div className="preview-toolbar"><Button variant="text" onClick={onBack}><ArrowLeft size={16} />返回列表</Button><div className="button-row">{own && <Button variant="outline" onClick={() => onEdit(entry.id)}><Pencil size={15} />編輯</Button>}{!own && <Button variant="text" onClick={() => onReport(entry.id)}><Flag size={15} />檢舉</Button>}<Button variant="text" onClick={() => navigator.clipboard?.writeText(window.location.href)}><Link2 size={15} />複製連結</Button></div></div><article className="entry-reading"><div className="entry-heading"><span className="entry-date"><CalendarDays size={16} />{formatLongDate(entry.entryDate)}</span><span className={`visibility-badge visibility-${entry.visibility}`}>{entry.visibility}</span><h1>{entry.title}</h1><div className="entry-byline"><span>{entry.authorName}</span><span>·</span><span>{entry.mood} {moodOptions.find((item) => item.value === entry.mood)?.icon}</span></div><div className="entry-location"><MapPin size={15} aria-hidden="true" /><span>{entry.location || '地區未知'}</span></div></div><div className="entry-content">{entry.content.split('\n').map((paragraph, index) => <p key={`${entry.id}-${index}`}>{paragraph || '\u00a0'}</p>)}</div><div className="entry-footer"><div className="tag-row">{entry.tags.map((tag) => <span key={tag}>#{tag}</span>)}</div><span>最後更新於 {formatDate(entry.updatedAt.slice(0, 10))}</span></div></article></PageContainer>
 }
 
 function AuthPage({ mode, onSubmit, onSwitch }: { mode: 'login' | 'register'; onSubmit: (values: { email: string; password: string; displayName: string; username: string }) => void; onSwitch: () => void }) {
@@ -574,7 +583,7 @@ function AdminUserRow({ user, currentUserId, onSetStatus, onSetRole, onChangePas
 
 function AdminEntryRow({ entry, onModerate, onView }: { entry: JournalEntry; onModerate: (entry: JournalEntry, action: 'hide' | 'restore' | 'delete') => void; onView: (id: string) => void }) {
   const hidden = entry.status === 'archived'
-  return <div className="admin-table-row admin-entry-row"><span className="entry-cell"><FileText size={16} /><span><strong>{entry.title || '未命名文章'}</strong><small>{formatDate(entry.entryDate)}</small></span></span><span>{entry.authorName}</span><span>{entry.visibility}</span><span className={`entry-status entry-status-${entry.status}`}>{hidden ? '已隐藏' : entry.status === 'draft' ? '草稿' : '公开'}</span><div className="table-actions"><button className="icon-button" title="查看文章" aria-label="查看文章" onClick={() => onView(entry.id)}><Eye size={16} /></button>{hidden ? <button className="icon-button" title="恢复公开" aria-label="恢复公开" onClick={() => onModerate(entry, 'restore')}><RotateCcw size={16} /></button> : <button className="icon-button" title="隐藏文章" aria-label="隐藏文章" onClick={() => onModerate(entry, 'hide')}><Archive size={16} /></button>}<button className="icon-button danger-icon" title="删除文章" aria-label="删除文章" onClick={() => onModerate(entry, 'delete')}><Trash2 size={16} /></button></div></div>
+  return <div className="admin-table-row admin-entry-row"><span className="entry-cell"><FileText size={16} /><span><strong>{entry.title || '未命名文章'}</strong><small>{formatDate(entry.entryDate)} · {entry.location || '地區未知'}</small></span></span><span>{entry.authorName}</span><span>{entry.visibility}</span><span className={`entry-status entry-status-${entry.status}`}>{hidden ? '已隐藏' : entry.status === 'draft' ? '草稿' : '公开'}</span><div className="table-actions"><button className="icon-button" title="查看文章" aria-label="查看文章" onClick={() => onView(entry.id)}><Eye size={16} /></button>{hidden ? <button className="icon-button" title="恢复公开" aria-label="恢复公开" onClick={() => onModerate(entry, 'restore')}><RotateCcw size={16} /></button> : <button className="icon-button" title="隐藏文章" aria-label="隐藏文章" onClick={() => onModerate(entry, 'hide')}><Archive size={16} /></button>}<button className="icon-button danger-icon" title="删除文章" aria-label="删除文章" onClick={() => onModerate(entry, 'delete')}><Trash2 size={16} /></button></div></div>
 }
 
 function BanNoticeModal({ notice, onClose, onGoLogin }: { notice: BanNotice; onClose: () => void; onGoLogin: () => void }) {
