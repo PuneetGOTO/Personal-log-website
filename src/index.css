@@ -272,6 +272,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .modal-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .modal-header h2 { margin: 0; font-family: 'Klee One', cursive; font-size: 27px; }
 .modal-card > p { color: var(--muted-ink); line-height: 1.7; }
+.ban-notice-card { border-color: var(--accent-yellow); }
+.ban-reason, .ban-terms { margin: 16px 0; padding: 14px 16px; border-left: 4px solid var(--accent-yellow); background: color-mix(in srgb, var(--accent-yellow) 15%, var(--surface)); }
+.ban-reason strong, .ban-terms strong { display: block; margin-bottom: 5px; color: var(--ink); }
+.ban-reason p, .ban-terms p { margin: 0; color: var(--muted-ink); line-height: 1.7; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 .toast { position: fixed; right: 24px; bottom: 24px; z-index: 30; display: flex; align-items: center; gap: 8px; max-width: min(420px, calc(100vw - 32px)); padding: 13px 13px 13px 16px; border: 2px solid var(--line); border-radius: 10px 8px 12px 9px; color: var(--ink); background: var(--surface); box-shadow: var(--shadow); }
 .toast-success > svg { color: var(--success); }

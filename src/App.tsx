@@ -41,7 +41,7 @@ import {
 } from 'lucide-react'
 import type { JournalEntry, Report, User, View, Visibility } from './types'
 import { makeExcerpt } from './lib/storage'
-import { api } from './lib/api'
+import { api, type BanNotice } from './lib/api'
 
 const moodOptions = [
   { value: 'Happy', label: 'Happy', icon: '🌞' },
@@ -136,6 +136,7 @@ function App() {
   const [mobileNav, setMobileNav] = useState(false)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
   const [reportingId, setReportingId] = useState<string | null>(null)
+  const [banNotice, setBanNotice] = useState<BanNotice | null>(null)
 
   useEffect(() => {
     api.bootstrap().then((snapshot) => {
@@ -143,6 +144,7 @@ function App() {
       setReports(snapshot.reports)
       setUsers(snapshot.users)
       setUser(snapshot.user)
+      setBanNotice(snapshot.banNotice)
     }).catch(() => notify('无法连接服务器，请稍后重试。', 'error')).finally(() => setReady(true))
   }, [])
 
@@ -179,6 +181,7 @@ function App() {
   useEffect(() => {
     if (user?.status === 'banned') {
       setUser(null)
+      setBanNotice({ email: user.email, reason: user.banReason || '违反社区使用条款，管理员已暂停此账号。' })
       notify('这个账号目前已被暂停。', 'error')
     }
   }, [user?.status])
@@ -197,6 +200,12 @@ function App() {
       notify(mode === 'login' ? '歡迎回來，今天也寫一點吧。' : '帳號建立完成，歡迎來到你的日誌。')
       navigate('home')
     } catch (error) {
+      const authError = error as Error & { code?: string; banReason?: string }
+      if (authError.code === 'ACCOUNT_BANNED') {
+        setUser(null)
+        setBanNotice({ email: values.email, reason: authError.banReason || '违反社区使用条款，管理员已暂停此账号。' })
+        return
+      }
       notify(error instanceof Error ? error.message : '登录失败，请稍后重试。', 'error')
     }
   }
@@ -271,12 +280,20 @@ function App() {
     } catch (error) { notify(error instanceof Error ? error.message : '创建失败。', 'error'); return false }
   }
 
-  const setUserStatus = async (target: User, status: 'active' | 'banned') => {
+  const setUserStatus = async (target: User, status: 'active' | 'banned', banReason = '') => {
+    if (status === 'banned' && !banReason.trim()) {
+      const entered = window.prompt('请输入封禁原因，用户登录时会看到这条说明：')
+      if (!entered || entered.trim().length < 4) {
+        notify('封禁必须填写至少 4 个字的原因。', 'error')
+        return
+      }
+      banReason = entered.trim()
+    }
     if (target.id === user?.id && status === 'banned') {
       notify('不能暂停当前管理员账号。', 'error')
       return
     }
-    try { const updated = await api.updateUser(target.id, { status }); setUsers((current) => current.map((item) => item.id === updated.id ? updated : item)); if (user?.id === target.id) setUser(updated); notify(status === 'banned' ? '账号已暂停。' : '账号已恢复。', 'info') } catch (error) { notify(error instanceof Error ? error.message : '操作失败。', 'error') }
+    try { const updated = await api.updateUser(target.id, { status, banReason }); setUsers((current) => current.map((item) => item.id === updated.id ? updated : item)); if (user?.id === target.id) setUser(updated); notify(status === 'banned' ? '账号已暂停。' : '账号已恢复。', 'info') } catch (error) { notify(error instanceof Error ? error.message : '操作失败。', 'error') }
   }
 
   const setUserRole = async (target: User, role: User['role']) => {
@@ -337,6 +354,7 @@ function App() {
       </BrowserFrame>
       {toast && <div className={`toast toast-${toast.type}`} role="status"><Check size={17} aria-hidden="true" /><span>{toast.message}</span><button className="icon-button toast-close" aria-label="關閉提示" onClick={() => setToast(null)}><X size={15} /></button></div>}
       {reportingId && <ReportModal entry={entries.find((item) => item.id === reportingId) ?? null} onClose={() => setReportingId(null)} onSubmit={submitReport} />}
+      {banNotice && <BanNoticeModal notice={banNotice} onClose={() => setBanNotice(null)} onGoLogin={() => { setBanNotice(null); navigate('login') }} />}
     </div>
   )
 }
@@ -493,7 +511,7 @@ function AdminPage({ user, users, reports, entries, onUpdateReport, onCreateUser
   entries: JournalEntry[]
   onUpdateReport: (report: Report, status: Report['status']) => void
   onCreateUser: (values: { displayName: string; username: string; email: string; password: string; role: User['role'] }) => Promise<boolean>
-  onSetUserStatus: (user: User, status: 'active' | 'banned') => void
+  onSetUserStatus: (user: User, status: 'active' | 'banned', reason?: string) => Promise<void>
   onSetUserRole: (user: User, role: User['role']) => void
   onUpdatePassword: (user: User, password: string) => Promise<boolean>
   onDeleteUser: (user: User) => void
@@ -557,6 +575,10 @@ function AdminUserRow({ user, currentUserId, onSetStatus, onSetRole, onChangePas
 function AdminEntryRow({ entry, onModerate, onView }: { entry: JournalEntry; onModerate: (entry: JournalEntry, action: 'hide' | 'restore' | 'delete') => void; onView: (id: string) => void }) {
   const hidden = entry.status === 'archived'
   return <div className="admin-table-row admin-entry-row"><span className="entry-cell"><FileText size={16} /><span><strong>{entry.title || '未命名文章'}</strong><small>{formatDate(entry.entryDate)}</small></span></span><span>{entry.authorName}</span><span>{entry.visibility}</span><span className={`entry-status entry-status-${entry.status}`}>{hidden ? '已隐藏' : entry.status === 'draft' ? '草稿' : '公开'}</span><div className="table-actions"><button className="icon-button" title="查看文章" aria-label="查看文章" onClick={() => onView(entry.id)}><Eye size={16} /></button>{hidden ? <button className="icon-button" title="恢复公开" aria-label="恢复公开" onClick={() => onModerate(entry, 'restore')}><RotateCcw size={16} /></button> : <button className="icon-button" title="隐藏文章" aria-label="隐藏文章" onClick={() => onModerate(entry, 'hide')}><Archive size={16} /></button>}<button className="icon-button danger-icon" title="删除文章" aria-label="删除文章" onClick={() => onModerate(entry, 'delete')}><Trash2 size={16} /></button></div></div>
+}
+
+function BanNoticeModal({ notice, onClose, onGoLogin }: { notice: BanNotice; onClose: () => void; onGoLogin: () => void }) {
+  return <div className="modal-backdrop" role="presentation"><section className="modal-card ban-notice-card" role="dialog" aria-modal="true" aria-labelledby="ban-notice-title"><div className="modal-header"><div><span className="eyebrow">ACCOUNT ACTION</span><h2 id="ban-notice-title">账号已被暂停</h2></div><button className="icon-button" type="button" aria-label="关闭" onClick={onClose}><X size={18} /></button></div><p>账号「{notice.email}」目前无法登录、发布或管理内容。</p><div className="ban-reason"><strong>处理原因</strong><p>{notice.reason}</p></div><div className="ban-terms"><strong>社区使用条款</strong><p>请勿发布违法、骚扰、欺诈、侵犯他人隐私或违反平台规则的内容。账号被暂停后，相关内容可能会被隐藏。</p></div><div className="modal-actions"><Button variant="text" onClick={onClose}>知道了</Button><Button variant="yellow" onClick={onGoLogin}><LogIn size={15} />返回登录</Button></div></section></div>
 }
 
 function ReportModal({ entry, onClose, onSubmit }: { entry: JournalEntry | null; onClose: () => void; onSubmit: (entry: JournalEntry, reason: string) => void }) {

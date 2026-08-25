@@ -125,6 +125,11 @@ function cookieValue(request, name) {
 }
 
 function currentUser(request) {
+  const user = sessionAccount(request)
+  return user && user.status !== 'banned' ? user : null
+}
+
+function sessionAccount(request) {
   const token = cookieValue(request, 'my_diary_session')
   const session = token ? sessions.get(token) : null
   if (!session || session.expiresAt < Date.now()) {
@@ -132,7 +137,7 @@ function currentUser(request) {
     return null
   }
   const user = db.users.find((item) => item.id === session.userId)
-  if (!user || user.status === 'banned') return null
+  if (!user) return null
   return user
 }
 
@@ -141,7 +146,7 @@ function sendJson(response, status, payload, extraHeaders = {}) {
   response.end(JSON.stringify(payload))
 }
 
-function fail(response, status, message) { sendJson(response, status, { error: message }) }
+function fail(response, status, message, details = {}) { sendJson(response, status, { error: message, ...details }) }
 async function body(request) {
   let raw = ''
   for await (const chunk of request) raw += chunk
@@ -177,8 +182,10 @@ async function api(request, response, pathname) {
   if (method !== 'GET' && request.headers.origin && request.headers.origin !== `http://${request.headers.host}` && request.headers.origin !== `https://${request.headers.host}`) return fail(response, 403, 'Origin rejected')
   if (pathname === '/api/health' && method === 'GET') return sendJson(response, 200, { ok: true })
   if (pathname === '/api/bootstrap' && method === 'GET') {
-    const user = currentUser(request)
-    return sendJson(response, 200, { user: publicUser(user), entries: visibleEntries(user), reports: user?.role === 'admin' ? db.reports : [], users: user?.role === 'admin' ? db.users.map(publicUser) : [] })
+    const account = sessionAccount(request)
+    const user = account?.status === 'banned' ? null : account
+    const banNotice = account?.status === 'banned' ? { email: account.email, reason: account.banReason || '违反社区使用条款，管理员已暂停此账号。' } : null
+    return sendJson(response, 200, { user: publicUser(user), banNotice, entries: account?.status === 'banned' ? [] : visibleEntries(user), reports: user?.role === 'admin' ? db.reports : [], users: user?.role === 'admin' ? db.users.map(publicUser) : [] })
   }
   if (pathname === '/api/auth/register' && method === 'POST') {
     const input = await body(request)
@@ -198,7 +205,8 @@ async function api(request, response, pathname) {
     }
     const input = await body(request)
     const user = db.users.find((item) => item.email === String(input.email || '').trim().toLowerCase())
-    if (!user || user.status === 'banned' || !verifyPassword(String(input.password || ''), user)) return fail(response, 401, 'Email or password is incorrect')
+    if (!user || !verifyPassword(String(input.password || ''), user)) return fail(response, 401, 'Email or password is incorrect')
+    if (user.status === 'banned') return fail(response, 403, 'This account has been banned', { code: 'ACCOUNT_BANNED', banReason: user.banReason || '违反社区使用条款，管理员已暂停此账号。' })
     clearLoginAttempts(request)
     user.lastSeenAt = now(); saveDb(); setSession(response, user)
     return sendJson(response, 200, { user: publicUser(user) })
@@ -262,7 +270,11 @@ async function api(request, response, pathname) {
       }
       if (input.status === 'banned' && target.id === user.id) return fail(response, 400, 'You cannot ban the current admin')
       if (input.role && target.id === user.id) return fail(response, 400, 'You cannot change the current admin role')
-      if (input.status === 'active' || input.status === 'banned') target.status = input.status
+      if (input.status === 'active' || input.status === 'banned') {
+        target.status = input.status
+        if (input.status === 'banned') target.banReason = String(input.banReason || '违反社区使用条款，管理员已暂停此账号。').trim().slice(0, 1000)
+        else delete target.banReason
+      }
       if (input.role === 'admin' || input.role === 'user') { target.role = input.role; target.roleSource = target.role === 'admin' ? 'granted' : undefined }
       saveDb(); return sendJson(response, 200, publicUser(target))
     }

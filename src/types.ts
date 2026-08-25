@@ -31,6 +31,7 @@ export type User = {
   bio: string
   password?: string
   status?: UserStatus
+  banReason?: string
   createdAt?: string
   lastSeenAt?: string
 }
